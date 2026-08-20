@@ -1,0 +1,152 @@
+{
+  "_meta": {
+    "nota": "Perfil de ejemplo con datos ficticios. Copia este archivo a perfil-maestro.json y reemplaza el contenido."
+  },
+  "personal": {
+    "nombre_completo": "Ada Ejemplo Lovelace",
+    "titular_profesional": "Ingeniera de Software",
+    "ciudad": "Bogota",
+    "departamento": "Cundinamarca",
+    "pais": "Colombia",
+    "telefono": "+57 300 000 0000",
+    "email": "ada@ejemplo.com",
+    "linkedin": "https://www.linkedin.com/in/ejemplo/",
+    "github": "https://github.com/ejemplo",
+    "portafolio": null,
+    "disponibilidad": "Remoto"
+  },
+  "idiomas": [
+    {
+      "idioma": "Espanol",
+      "nivel": "Nativo"
+    },
+    {
+      "idioma": "Ingles",
+      "nivel": "B1"
+    }
+  ],
+  "educacion": [
+    {
+      "titulo": "Ingenieria de Sistemas",
+      "institucion": "Universidad Ejemplo",
+      "ciudad": "Bogota",
+      "anio_grado": 2022,
+      "periodo_estudios": "2017 - 2022"
+    }
+  ],
+  "certificaciones": [
+    {
+      "nombre": "Scrum Foundation",
+      "entidad": "Certiprof",
+      "anio": 2023
+    }
+  ],
+  "experiencia": [
+    {
+      "id": "empresa-a",
+      "empresa": "Empresa A",
+      "cargo": "Desarrolladora Full Stack",
+      "modalidad": "Remoto",
+      "inicio": "2024-01",
+      "fin": null,
+      "actual": true,
+      "logros": [
+        "Desarrollo de aplicaciones web con React y Node.js.",
+        "Diseno de APIs RESTful sobre PostgreSQL.",
+        "Despliegue con Docker y pipelines de CI/CD."
+      ],
+      "tecnologias": [
+        "React",
+        "Node.js",
+        "PostgreSQL",
+        "Docker",
+        "CI/CD"
+      ]
+    },
+    {
+      "id": "empresa-b",
+      "empresa": "Empresa B",
+      "cargo": "Desarrolladora Backend",
+      "modalidad": "Presencial",
+      "inicio": "2022-06",
+      "fin": "2023-12",
+      "actual": false,
+      "logros": [
+        "Servicios backend en Python con Django.",
+        "Automatizacion de procesos de datos."
+      ],
+      "tecnologias": [
+        "Python",
+        "Django",
+        "MySQL"
+      ]
+    }
+  ],
+  "habilidades": {
+    "lenguajes": [
+      "Python",
+      "JavaScript",
+      "SQL"
+    ],
+    "frontend": [
+      "React",
+      "HTML",
+      "CSS"
+    ],
+    "backend": [
+      "Node.js",
+      "Django"
+    ],
+    "bases_de_datos": [
+      "PostgreSQL",
+      "MySQL"
+    ],
+    "cloud_devops": [
+      "AWS",
+      "Docker",
+      "CI/CD"
+    ],
+    "metodologias": [
+      "Scrum",
+      "Agile"
+    ]
+  },
+  "perfiles_objetivo": [
+    {
+      "id": "desarrollo",
+      "nombre": "Desarrollo Full Stack",
+      "prioridad": 1,
+      "remoto_viable": "alta",
+      "cargos_objetivo": [
+        "Desarrollador Full Stack",
+        "Ingeniero de Software"
+      ],
+      "keywords": [
+        "React",
+        "Node.js",
+        "Python",
+        "Docker",
+        "AWS"
+      ]
+    }
+  ],
+  "criterios_busqueda": {
+    "smmlv_2026_cop": 1750905,
+    "piso_salarial_cop_mes": 3501810,
+    "modalidad": [
+      "Remoto"
+    ],
+    "idioma_vacante": [
+      "Espanol"
+    ],
+    "geografias": [
+      "Colombia",
+      "LATAM",
+      "Espana"
+    ],
+    "excluir": [
+      "Vacantes que exijan ingles B2 o superior",
+      "Presencial"
+    ]
+  }
+}

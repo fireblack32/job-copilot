@@ -1,0 +1,27 @@
+# Datos personales: nunca se versionan
+perfil-maestro.json
+perfil.json
+salidas/
+vacantes/variante-*.json
+generador/cv-base.js
+
+# Resultados de barridos (se regeneran)
+resultados/
+*.docx
+*.pdf
+
+# Dependencias y cache
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Artefactos de trabajo con datos reales
+vacantes/
+generador/make_variantes.py
+generador/fix_acentos.py
