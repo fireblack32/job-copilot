@@ -78,6 +78,37 @@ function periodo(exp) {
   return `${fmt(exp.inicio)} – ${exp.actual ? "Actualidad" : fmt(exp.fin)}`;
 }
 
+/** Quita el esquema y la barra final para que el enlace se lea corto. */
+const acortar = (url) => url.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
+
+const separador = () => new TextRun({ text: "  |  ", size: 20, font: FONT, color: "595959" });
+
+const enlace = (url) => new ExternalHyperlink({
+  link: url,
+  children: [new TextRun({ text: acortar(url), size: 20, font: FONT, color: "0563C1", underline: {} })],
+});
+
+/**
+ * Segunda linea del encabezado: LinkedIn, GitHub, portafolio y disponibilidad.
+ *
+ * Los enlaces que el perfil no define simplemente no aparecen — un CV con un
+ * campo vacio o un placeholder se ve peor que uno sin ese campo.
+ */
+function enlacesDeContacto(p, v) {
+  const partes = [];
+  for (const url of [p.linkedin, p.github, p.portafolio]) {
+    if (!url) continue;
+    if (partes.length) partes.push(separador());
+    partes.push(enlace(url));
+  }
+  if (partes.length) partes.push(separador());
+  partes.push(new TextRun({
+    text: v.disponibilidad || "Disponibilidad: trabajo 100% remoto",
+    size: 20, font: FONT,
+  }));
+  return partes;
+}
+
 // ------------------------------------------------------------------ ensamble
 function construir(perfil, v) {
   const p = perfil.personal;
@@ -94,19 +125,30 @@ function construir(perfil, v) {
       new TextRun({ text: "  |  ", size: 20, font: FONT, color: "595959" }),
       new TextRun({ text: p.email, size: 20, font: FONT }),
     ]),
-    P.centro([
-      new ExternalHyperlink({
-        link: p.linkedin,
-        children: [new TextRun({ text: p.linkedin.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, ""),
-                                 size: 20, font: FONT, color: "0563C1", underline: {} })],
-      }),
-      new TextRun({ text: "  |  ", size: 20, font: FONT, color: "595959" }),
-      new TextRun({ text: v.disponibilidad || "Disponibilidad: trabajo 100% remoto", size: 20, font: FONT }),
-    ]),
+    P.centro(enlacesDeContacto(p, v)),
     P.seccion("Perfil profesional"),
     ...v.perfil.map(P.parrafo),
-    P.seccion("Experiencia profesional"),
   ];
+
+  // Los proyectos publicos van antes que la experiencia: son lo unico que el
+  // reclutador puede verificar por su cuenta antes de llamarte.
+  if (v.proyectos?.length) {
+    hijos.push(P.seccion("Proyectos publicos"));
+    for (const pr of v.proyectos) {
+      hijos.push(new Paragraph({
+        spacing: { before: 140, after: 0 },
+        children: [
+          new TextRun({ text: pr.nombre, bold: true, size: 22, font: FONT }),
+          new TextRun({ text: "  ", size: 22, font: FONT }),
+          enlace(pr.url),
+        ],
+      }));
+      hijos.push(P.meta(pr.stack));
+      for (const b of pr.puntos) hijos.push(P.vineta(b));
+    }
+  }
+
+  hijos.push(P.seccion("Experiencia profesional"));
 
   for (const id of orden) {
     const e = expPorId[id];
@@ -132,8 +174,13 @@ function construir(perfil, v) {
   hijos.push(P.seccion("Idiomas"));
   for (const i of perfil.idiomas) hijos.push(P.skill(i.idioma, i.nivel === "B1" ? "B1 — intermedio (lectura técnica de documentación)" : i.nivel));
 
-  hijos.push(P.seccion("Referencias"));
-  hijos.push(P.parrafo("Referencias laborales y personales disponibles a solicitud."));
+  // "Referencias disponibles a solicitud" no aporta informacion: se asume, y
+  // ocupa una linea que puede ser la que empuja el CV a una pagina de mas.
+  // Solo se incluye si la variante lo pide expresamente.
+  if (v.incluir_referencias) {
+    hijos.push(P.seccion("Referencias"));
+    hijos.push(P.parrafo("Referencias laborales y personales disponibles a solicitud."));
+  }
 
   return new Document({
     creator: p.nombre_completo,

@@ -25,3 +25,7 @@ Thumbs.db
 vacantes/
 generador/make_variantes.py
 generador/fix_acentos.py
+
+# Estado de sesion (datos personales)
+ESTADO-SESION.md
+generador/add_proyectos.py
