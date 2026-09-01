@@ -29,3 +29,6 @@ generador/fix_acentos.py
 # Estado de sesion (datos personales)
 ESTADO-SESION.md
 generador/add_proyectos.py
+
+# Formulario generado con datos personales
+formulario-*.html

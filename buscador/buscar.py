@@ -12,12 +12,16 @@ import argparse, io, json, os, re, sys, unicodedata
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fuentes
 import fuentes_co
+import fuentes_cali
 
 # Torre, elempleo y Computrabajo usan los adaptadores corregidos de fuentes_co
 fuentes.ADAPTADORES.update({
     "torre": fuentes_co.torre,
     "elempleo": fuentes_co.elempleo,
     "computrabajo": fuentes_co.computrabajo,
+    # Presencial e hibrido en Cali: estos NO filtran por remoto.
+    "computrabajo-cali": fuentes_cali.computrabajo_cali,
+    "elempleo-cali": fuentes_cali.elempleo_cali,
 })
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
@@ -25,7 +29,12 @@ RES = os.path.join(AQUI, "..", "resultados")
 PERFIL = os.environ.get("PERFIL_MAESTRO", os.path.join(AQUI, "..", "perfil-maestro.json"))
 
 SMMLV_2026 = 1750905
-PISO_COP = 2 * SMMLV_2026          # 3.501.810
+PISO_COP = 2 * SMMLV_2026          # 3.501.810, piso para vacantes remotas
+
+# Piso para Cali. Es mas alto que el remoto a proposito: una vacante presencial
+# cuesta transporte y unas dos horas de desplazamiento al dia, asi que tiene que
+# pagar mas que una remota para valer lo mismo.
+PISO_CALI = 4_000_000
 HORAS_MES = 160
 
 # ------------------------------------------------------------------- utilidad
@@ -196,20 +205,28 @@ def main():
               ensure_ascii=False)
 
     # filtrar y puntuar
-    rank, descartes = [], {"no_remoto": 0, "idioma": 0, "geo": 0, "salario": 0, "encaje": 0, "senior": 0}
+    #
+    # Hay dos vias de aceptacion, con reglas distintas:
+    #
+    #   remota  -> en espanol, sin exigencia geografica, piso 2 SMMLV
+    #   cali    -> hibrida o presencial en Cali, piso 4.000.000 y con
+    #              prestaciones de ley (o al menos sin declarar lo contrario)
+    #
+    # Mezclarlas en un solo filtro fue lo que antes hacia desaparecer todo lo
+    # presencial: la primera condicion descartaba por no ser remoto.
+    rank = []
+    descartes = {"no_remoto": 0, "idioma": 0, "geo": 0, "salario": 0,
+                 "encaje": 0, "senior": 0, "sin_prestaciones": 0, "fuera_de_cali": 0}
+
     for r in dedup:
         texto = r.get("texto") or ""
         campo_geo = sin_tildes(texto + " " + (r.get("ubicacion") or ""))
+        es_fuente_cali = str(r.get("fuente", "")).endswith("-cali")
+        modalidad = r.get("modalidad") or ("remoto" if r.get("remoto") else None)
 
-        if r.get("remoto") is False:
-            descartes["no_remoto"] += 1
-            continue
         blo = idioma_bloquea(texto, r.get("titulo"))
         if blo:
             descartes["idioma"] += 1
-            continue
-        if any(re.search(p, campo_geo) for p in GEO_EXCLUYE):
-            descartes["geo"] += 1
             continue
         if SENIOR_DURO.search(r.get("titulo") or ""):
             descartes["senior"] += 1
@@ -218,24 +235,65 @@ def main():
         cop = a_cop_mes(r.get("sal_min"), r.get("moneda"), r.get("periodo"))
         cop_max = a_cop_mes(r.get("sal_max"), r.get("moneda"), r.get("periodo"))
         techo = cop_max or cop
-        if techo is not None and techo <= PISO_COP:
-            descartes["salario"] += 1
-            continue
+
+        if es_fuente_cali:
+            # Debe estar en Cali de verdad, no solo venir del listado de Cali.
+            if "cali" not in campo_geo:
+                descartes["fuera_de_cali"] += 1
+                continue
+            # Lo 100% remoto que aparece en el listado de Cali ya lo cubre la
+            # via remota; aqui interesa lo que obliga a pisar la oficina.
+            if modalidad == "remoto":
+                descartes["no_remoto"] += 1
+                continue
+            # Prestaciones: False descarta, None no. El silencio es habitual en
+            # la bolsa colombiana y descartar por el dejaria fuera media busqueda.
+            if r.get("prestaciones") is False:
+                descartes["sin_prestaciones"] += 1
+                continue
+            if techo is not None and techo < PISO_CALI:
+                descartes["salario"] += 1
+                continue
+            via, piso = "cali", PISO_CALI
+        else:
+            if r.get("remoto") is False:
+                descartes["no_remoto"] += 1
+                continue
+            if any(re.search(p, campo_geo) for p in GEO_EXCLUYE):
+                descartes["geo"] += 1
+                continue
+            if techo is not None and techo <= PISO_COP:
+                descartes["salario"] += 1
+                continue
+            via, piso = "remota", PISO_COP
 
         pts, hits, contras, anios = puntuar(texto, r.get("titulo"))
         if pts < args.min_pts:
             descartes["encaje"] += 1
             continue
 
+        zona = r.get("zona")
         rank.append({**r,
+                     "via": via,
+                     "modalidad": modalidad,
+                     "zona": zona,
                      "cop_min": round(cop) if cop else None,
                      "cop_max": round(cop_max) if cop_max else None,
-                     "sobre_piso": round(techo / PISO_COP, 2) if techo else None,
+                     "sobre_piso": round(techo / piso, 2) if techo else None,
                      "pts": pts, "hits": hits, "contras": contras, "anios_req": anios,
                      "latam": bool(any(re.search(p, campo_geo) for p in GEO_ACEPTA)),
                      "texto": texto[:4000]})
 
-    rank.sort(key=lambda r: (not r["latam"], -r["pts"], -(r["cop_max"] or r["cop_min"] or 0)))
+    # Orden: primero Cali sur (es la preferencia declarada), luego el resto de
+    # Cali, luego lo remoto; dentro de cada grupo, por encaje y por salario.
+    def clave(r):
+        if r["via"] == "cali":
+            grupo = 0 if r.get("zona") == "sur" else 1
+        else:
+            grupo = 2
+        return (grupo, not r["latam"], -r["pts"], -(r["cop_max"] or r["cop_min"] or 0))
+
+    rank.sort(key=clave)
     json.dump(rank, io.open(os.path.join(RES, "ranking.json"), "w", encoding="utf-8"),
               ensure_ascii=False, indent=1)
 
@@ -243,6 +301,11 @@ def main():
     print("recolectadas      :", len(crudo), "| unicas:", len(dedup))
     print("descartes         :", descartes)
     print("CANDIDATAS        :", len(rank), " (LATAM/Colombia:", sum(1 for r in rank if r["latam"]), ")")
+    cali = [r for r in rank if r["via"] == "cali"]
+    print("  remotas         :", sum(1 for r in rank if r["via"] == "remota"))
+    print("  Cali            :", len(cali),
+          "| sur:", sum(1 for r in cali if r.get("zona") == "sur"),
+          "| hibridas:", sum(1 for r in cali if r.get("modalidad") == "hibrido"))
     print("con salario > piso:", sum(1 for r in rank if r["sobre_piso"]))
     print("=" * 74)
     por_fuente = {}
