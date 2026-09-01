@@ -16,7 +16,7 @@ import re
 import time
 
 from fuentes import _get, _strip
-from fuentes_co import _ld_blocks
+from fuentes_co import _ld_blocks, job_posting
 
 # Barrios, comunas y referencias del sur de Cali. Es una lista de literales a
 # proposito: inferir la zona desde una direccion sin geocodificar produce mas
@@ -144,10 +144,8 @@ def _salario(jp, texto):
 
 
 def _job_posting(html):
-    for blk in _ld_blocks(html):
-        if isinstance(blk, dict) and blk.get("@type") == "JobPosting":
-            return blk
-    return None
+    """Delega en el buscador compartido, que sabe entrar en @graph."""
+    return job_posting(html)
 
 
 # --------------------------------------------------------------- Computrabajo

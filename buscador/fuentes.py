@@ -44,8 +44,16 @@ def _json(url, data=None, headers=None):
 
 
 def _strip(h):
+    """Texto visible de un fragmento HTML.
+
+    Quitar solo las etiquetas no basta: el contenido de <style> y <script> queda
+    dentro y se cuela como si fuera texto del aviso. Eso hacia que la puntuacion
+    corriera sobre CSS —"bottom" contiene "bot"— y que un aviso sin descripcion
+    utilizable pareciera tener senales que no tenia.
+    """
     if not h:
         return ""
+    h = re.sub(r"(?is)<(script|style|noscript).*?</\s*>", " ", h)
     return html.unescape(re.sub(r"<[^>]+>", " ", h))
 
 

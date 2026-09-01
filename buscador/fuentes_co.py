@@ -77,6 +77,38 @@ def _ld_blocks(html_text):
             continue
 
 
+def job_posting(html_text):
+    """Encuentra el JobPosting de una pagina, este donde este.
+
+    Computrabajo no publica el JobPosting suelto: lo envuelve en un `@graph`
+    junto al Organization y al WebPage. Mirar solo el nivel superior devolvia
+    None y el adaptador caia al respaldo de raspar la pagina entera, que trae
+    el encabezado y no la oferta. Noventa vacantes por barrido se perdian asi,
+    incluida una de 7.500.000 al mes.
+    """
+    def buscar(nodo):
+        if isinstance(nodo, dict):
+            if nodo.get("@type") == "JobPosting":
+                return nodo
+            for clave in ("@graph", "itemListElement", "mainEntity"):
+                if clave in nodo:
+                    hallado = buscar(nodo[clave])
+                    if hallado:
+                        return hallado
+        elif isinstance(nodo, list):
+            for hijo in nodo:
+                hallado = buscar(hijo)
+                if hallado:
+                    return hallado
+        return None
+
+    for bloque in _ld_blocks(html_text):
+        hallado = buscar(bloque)
+        if hallado:
+            return hallado
+    return None
+
+
 def elempleo(max_detalle=70):
     fichas, vistos = [], set()
     for url in EE_LISTADOS:
@@ -101,11 +133,7 @@ def elempleo(max_detalle=70):
             s = _get(f["url"], timeout=30)
         except Exception:
             continue
-        jp = None
-        for blk in _ld_blocks(s):
-            if isinstance(blk, dict) and blk.get("@type") == "JobPosting":
-                jp = blk
-                break
+        jp = job_posting(s)
         desc = _strip(jp.get("description")) if jp else ""
         texto = (f["titulo"] or "") + " " + desc
         sal_min = sal_max = None
@@ -173,11 +201,7 @@ def computrabajo(paginas=4, max_detalle=80):
             s = _get(f["url"], timeout=30)
         except Exception:
             continue
-        jp = None
-        for blk in _ld_blocks(s):
-            if isinstance(blk, dict) and blk.get("@type") == "JobPosting":
-                jp = blk
-                break
+        jp = job_posting(s)
         desc = _strip(jp.get("description")) if jp else _strip(s)[:6000]
         titulo = f["titulo"] or (jp.get("title") if jp else None)
         sal_min = sal_max = None

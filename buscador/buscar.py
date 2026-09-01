@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fuentes
 import fuentes_co
 import fuentes_cali
+import perfilado
 
 # Torre, elempleo y Computrabajo usan los adaptadores corregidos de fuentes_co
 fuentes.ADAPTADORES.update({
@@ -123,6 +124,13 @@ GEO_EXCLUYE = [
     r"us[- ]based", r"eu[- ]based", r"authorized to work in the (us|united states)",
     r"residencia en (mexico|argentina|peru|españa) ", r"solo (para )?chile",
 ]
+#: Cali con limite de palabra. Sin el, "calidad" cuenta como si fuera Cali.
+ES_CALI = re.compile(r"\bcali\b")
+#: Si la ubicacion declarada nombra otra ciudad, manda sobre el texto libre.
+OTRA_CIUDAD = re.compile(
+    r"\b(bogota|medellin|barranquilla|cartagena|bucaramanga|pereira|"
+    r"manizales|cucuta|ibague|santa marta|villavicencio|neiva|armenia|pasto)\b")
+
 GEO_ACEPTA = [r"latam", r"latinoam", r"america latina", r"colombia", r"anywhere", r"worldwide",
               r"cualquier pais", r"remote_anywhere", r"toda la region"]
 
@@ -148,14 +156,37 @@ SENIOR_DURO = re.compile(r"\b(staff|principal|head of|director|vp of|arquitect[o
 ANIOS = re.compile(r"(\d{1,2})\s*\+?\s*(?:a[nñ]os|years)")
 
 
+#: Cache de patrones: compilar una vez y no por vacante.
+_PATRON_SKILL = {}
+
+
+def _patron(clave):
+    """Patron con limites de palabra para una habilidad.
+
+    Buscar la subcadena suelta es lo que hacia que "bot" apareciera dentro de
+    "bottom" y "sla" dentro de "traslado", sumando puntos a avisos que no tenian
+    nada que ver. Con limites de palabra eso desaparece.
+    """
+    if clave not in _PATRON_SKILL:
+        k = sin_tildes(clave).strip()
+        # \b no sirve junto a simbolos como "c#", ".net" o "ci/cd": ahi el
+        # limite lo pone el simbolo, y basta con anclar por la izquierda.
+        if re.search(r"[^\w\s]", k):
+            patron = r"(?<!\w)" + re.escape(k)
+        else:
+            patron = r"\b" + re.escape(k) + r"\b"
+        _PATRON_SKILL[clave] = re.compile(patron)
+    return _PATRON_SKILL[clave]
+
+
 def puntuar(texto, titulo):
     low = sin_tildes(texto + " " + (titulo or ""))
     hits, pts = [], 0
     for k, w in SKILLS.items():
-        if sin_tildes(k) in low:
+        if _patron(k).search(low):
             pts += w
             hits.append(k)
-    contras = [d.strip() for d in DESCUENTA if sin_tildes(d) in low]
+    contras = [d.strip() for d in DESCUENTA if _patron(d.strip()).search(low)]
     pts -= 2 * len(contras)
     anios = [int(a) for a in ANIOS.findall(low) if int(a) <= 20]
     return pts, hits, contras, (max(anios) if anios else None)
@@ -173,6 +204,22 @@ def main():
     print("  1 USD = %.0f COP" % TASAS_COP["USD"])
     os.makedirs(RES, exist_ok=True)
     perfil = json.load(io.open(PERFIL, encoding="utf-8"))
+
+    # Los criterios y los pesos salen del perfil, no de constantes del codigo.
+    # Sin esto el buscador describe a una sola persona y no sirve para otra.
+    criterios = perfilado.Criterios(perfil)
+    derivados = perfilado.pesos_de_habilidades(perfil)
+    if derivados:
+        SKILLS.clear()
+        SKILLS.update(derivados)
+        _PATRON_SKILL.clear()
+    global PISO_COP, PISO_CALI, ES_CALI
+    PISO_COP = criterios.piso_remoto
+    PISO_CALI = criterios.piso_presencial
+    if criterios.ciudad:
+        ES_CALI = perfilado.patron_ciudad(criterios.ciudad)
+    print("  criterios :", criterios)
+    print("  habilidades puntuables:", len(SKILLS))
 
     crudo = []
     for nombre in [f.strip() for f in args.fuentes.split(",") if f.strip()]:
@@ -236,15 +283,25 @@ def main():
         cop_max = a_cop_mes(r.get("sal_max"), r.get("moneda"), r.get("periodo"))
         techo = cop_max or cop
 
-        if es_fuente_cali:
+        # La via se decide antes de aplicar reglas. Una vacante que aparece en un
+        # listado de Cali pero es 100% remota va por la via remota: descartarla
+        # perdia 42 vacantes de un solo barrido solo por donde estaba publicada.
+        if es_fuente_cali and modalidad != "remoto":
+            via, piso = "cali", PISO_CALI
+        else:
+            via, piso = "remota", PISO_COP
+
+        if via == "cali":
             # Debe estar en Cali de verdad, no solo venir del listado de Cali.
-            if "cali" not in campo_geo:
+            # Se mira primero la ubicacion estructurada y solo despues el texto
+            # libre, siempre con limite de palabra: buscar "cali" suelto lo
+            # encuentra dentro de "CALIdad", y asi se colo una vacante de Bogota.
+            ubic = sin_tildes(r.get("ubicacion") or "")
+            if OTRA_CIUDAD.search(ubic) and not ES_CALI.search(ubic):
                 descartes["fuera_de_cali"] += 1
                 continue
-            # Lo 100% remoto que aparece en el listado de Cali ya lo cubre la
-            # via remota; aqui interesa lo que obliga a pisar la oficina.
-            if modalidad == "remoto":
-                descartes["no_remoto"] += 1
+            if not (ES_CALI.search(ubic) or ES_CALI.search(campo_geo)):
+                descartes["fuera_de_cali"] += 1
                 continue
             # Prestaciones: False descarta, None no. El silencio es habitual en
             # la bolsa colombiana y descartar por el dejaria fuera media busqueda.
@@ -254,7 +311,6 @@ def main():
             if techo is not None and techo < PISO_CALI:
                 descartes["salario"] += 1
                 continue
-            via, piso = "cali", PISO_CALI
         else:
             if r.get("remoto") is False:
                 descartes["no_remoto"] += 1
@@ -265,7 +321,6 @@ def main():
             if techo is not None and techo <= PISO_COP:
                 descartes["salario"] += 1
                 continue
-            via, piso = "remota", PISO_COP
 
         pts, hits, contras, anios = puntuar(texto, r.get("titulo"))
         if pts < args.min_pts:
