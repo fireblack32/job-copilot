@@ -14,6 +14,7 @@ import fuentes
 import fuentes_co
 import fuentes_cali
 import perfilado
+import descalificadores
 
 # Torre, elempleo y Computrabajo usan los adaptadores corregidos de fuentes_co
 fuentes.ADAPTADORES.update({
@@ -264,6 +265,7 @@ def main():
     rank = []
     descartes = {"no_remoto": 0, "idioma": 0, "geo": 0, "salario": 0,
                  "encaje": 0, "senior": 0, "sin_prestaciones": 0, "fuera_de_cali": 0}
+    motivos_descarte = {}
 
     for r in dedup:
         texto = r.get("texto") or ""
@@ -274,6 +276,14 @@ def main():
         blo = idioma_bloquea(texto, r.get("titulo"))
         if blo:
             descartes["idioma"] += 1
+            continue
+
+        # Descalificadores: lo que hace imposible la vacante sin importar el
+        # encaje. Va antes de puntuar porque no es "menos puntos", es un no.
+        motivo = descalificadores.descalifica(texto + " " + (r.get("titulo") or ""), perfil)
+        if motivo:
+            descartes["descalificado"] = descartes.get("descalificado", 0) + 1
+            motivos_descarte[motivo] = motivos_descarte.get(motivo, 0) + 1
             continue
         if SENIOR_DURO.search(r.get("titulo") or ""):
             descartes["senior"] += 1
@@ -355,6 +365,10 @@ def main():
     print("\n" + "=" * 74)
     print("recolectadas      :", len(crudo), "| unicas:", len(dedup))
     print("descartes         :", descartes)
+    if motivos_descarte:
+        print("  descalificados por:")
+        for mo, n in sorted(motivos_descarte.items(), key=lambda x: -x[1])[:6]:
+            print("     %-3d %s" % (n, mo))
     print("CANDIDATAS        :", len(rank), " (LATAM/Colombia:", sum(1 for r in rank if r["latam"]), ")")
     cali = [r for r in rank if r["via"] == "cali"]
     print("  remotas         :", sum(1 for r in rank if r["via"] == "remota"))
