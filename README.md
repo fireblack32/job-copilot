@@ -96,7 +96,34 @@ python buscador/buscar.py --fuentes getonbrd,torre --min-pts 20
 
 # generar un CV adaptado
 node generador/cv-gen.js vacantes/variante-ejemplo.json salidas/cv.docx
+
+# tablero con todas las candidatas y su enlace
+python -m copiloto.tablero --min-pts 14
+
+# anotar lo que se postulo a mano (pegado tal cual del tablero)
+python -m copiloto.registrar < pegado.txt
 ```
+
+### El tablero y la bitácora
+
+`ranking.json` sirve para automatizar; no sirve para que una persona postule. El
+tablero lo convierte en un HTML suelto con **todas** las candidatas, su enlace
+directo y una casilla por vacante. Se abre sin servidor y sin red.
+
+Cuando la persona postula por su cuenta, marca lo que hizo y copia la lista. Ese
+pegado entra por `copiloto.registrar` y queda en `bitacora.json`, que es la
+memoria de qué se tocó ya. El siguiente barrido no vuelve a ofrecerlo.
+
+    barrido ──> ranking.json ──> tablero.html ──> la persona postula sola
+                                       │
+                                       └──> copia las URLs ──> bitacora.json
+                                                                    │
+                            el proximo tablero ya no las ofrece <───┘
+
+Una vacante se reconoce por `fuente + id` y también por `empresa + cargo`
+normalizados. La segunda hace falta porque los portales reciclan ids y republican
+el mismo puesto: sin ella se le manda dos veces la misma hoja de vida a la misma
+empresa, que es más caro que perder una vacante.
 
 El perfil se toma de `perfil-maestro.json` en la raíz, o de la ruta que indique la variable de entorno `PERFIL_MAESTRO`. Hay un `perfil-ejemplo.json` para arrancar.
 

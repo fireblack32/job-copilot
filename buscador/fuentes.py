@@ -53,7 +53,7 @@ def _strip(h):
     """
     if not h:
         return ""
-    h = re.sub(r"(?is)<(script|style|noscript).*?</\s*>", " ", h)
+    h = re.sub(r"(?is)<(script|style|noscript)\b.*?</\1\s*>", " ", h)
     return html.unescape(re.sub(r"<[^>]+>", " ", h))
 
 

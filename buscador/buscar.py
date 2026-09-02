@@ -199,6 +199,10 @@ def main():
     ap.add_argument("--fuentes", default=",".join(fuentes.ADAPTADORES))
     ap.add_argument("--trm", type=float, default=3124.0)
     ap.add_argument("--min-pts", type=int, default=14)
+    #: Vuelve a filtrar y puntuar lo ya recolectado, sin tocar los portales.
+    #: Un barrido tarda veinte minutos; probar una regla nueva no deberia.
+    ap.add_argument("--desde-crudo", action="store_true",
+                    help="Reprocesa resultados/crudo.json en vez de barrer.")
     args = ap.parse_args()
 
     refrescar_tasas()
@@ -221,6 +225,12 @@ def main():
         ES_CALI = perfilado.patron_ciudad(criterios.ciudad)
     print("  criterios :", criterios)
     print("  habilidades puntuables:", len(SKILLS))
+
+    if args.desde_crudo:
+        dedup = json.load(io.open(os.path.join(RES, "crudo.json"), encoding="utf-8"))
+        crudo = dedup
+        print("  reprocesando", len(dedup), "avisos ya recolectados")
+        return _rankear(dedup, crudo, args, perfil, criterios)
 
     crudo = []
     for nombre in [f.strip() for f in args.fuentes.split(",") if f.strip()]:
@@ -252,6 +262,16 @@ def main():
     json.dump(dedup, io.open(os.path.join(RES, "crudo.json"), "w", encoding="utf-8"),
               ensure_ascii=False)
 
+    return _rankear(dedup, crudo, args, perfil, criterios)
+
+
+def _rankear(dedup, crudo, args, perfil, criterios):
+    """Filtra, puntua y escribe el ranking sobre avisos ya recolectados.
+
+    Esta separado de la recoleccion para poder reprocesar sin barrer: cambiar
+    una regla y esperar veinte minutos para ver el efecto hace que las reglas
+    se prueben poco, y las reglas que se prueban poco son las que fallan calladas.
+    """
     # filtrar y puntuar
     #
     # Hay dos vias de aceptacion, con reglas distintas:
@@ -264,7 +284,8 @@ def main():
     # presencial: la primera condicion descartaba por no ser remoto.
     rank = []
     descartes = {"no_remoto": 0, "idioma": 0, "geo": 0, "salario": 0,
-                 "encaje": 0, "senior": 0, "sin_prestaciones": 0, "fuera_de_cali": 0}
+                 "encaje": 0, "senior": 0, "sin_prestaciones": 0, "fuera_de_cali": 0,
+                 "exige_otra_ciudad": 0}
     motivos_descarte = {}
 
     for r in dedup:
@@ -272,6 +293,19 @@ def main():
         campo_geo = sin_tildes(texto + " " + (r.get("ubicacion") or ""))
         es_fuente_cali = str(r.get("fuente", "")).endswith("-cali")
         modalidad = r.get("modalidad") or ("remoto" if r.get("remoto") else None)
+        # Los adaptadores remotos no clasifican modalidad: solo marcan un
+        # booleano `remoto` que se enciende con la palabra suelta. Por eso una
+        # oferta de Computrabajo que dice "Presencial y remoto" en Bogota
+        # llegaba aqui como remota. Se clasifica de nuevo cuando hace falta, y
+        # "presencial y remoto" es hibrido: exige ir a la oficina algunos dias.
+        if modalidad in (None, "remoto"):
+            campo = sin_tildes((r.get("titulo") or "") + " " + texto)
+            hib = fuentes_cali.RE_HIBRIDO.search(campo)
+            pres = fuentes_cali.RE_PRESENCIAL.search(campo)
+            if hib or (pres and fuentes_cali.RE_REMOTO.search(campo)):
+                modalidad = "hibrido"
+            elif pres:
+                modalidad = "presencial"
 
         blo = idioma_bloquea(texto, r.get("titulo"))
         if blo:
@@ -324,6 +358,16 @@ def main():
         else:
             if r.get("remoto") is False:
                 descartes["no_remoto"] += 1
+                continue
+            # Que el aviso diga "remoto" en alguna linea no lo hace remoto. Una
+            # hibrida en Bogota exige vivir en Bogota, y por esta rendija entraron
+            # NTT DATA, PROCIBERNETICA y COMWARE como si fueran remotas.
+            otra = descalificadores.exige_otra_ciudad(
+                modalidad, r.get("ubicacion") or "", texto,
+                criterios.ciudad or "")
+            if otra:
+                descartes["exige_otra_ciudad"] += 1
+                motivos_descarte[otra] = motivos_descarte.get(otra, 0) + 1
                 continue
             if any(re.search(p, campo_geo) for p in GEO_EXCLUYE):
                 descartes["geo"] += 1

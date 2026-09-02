@@ -129,6 +129,51 @@ def restringe_pais(texto: str, pais_persona: str = "colombia") -> str | None:
     return None
 
 
+# ------------------------------------------------------------------- ciudad
+#
+# Una vacante hibrida o presencial exige estar donde queda la oficina. Si esa
+# ciudad no es la de la persona, no importa que el aviso diga "remoto" en alguna
+# linea: NTT DATA, PROCIBERNETICA y COMWARE entraron como remotas siendo hibridas
+# en Bogota, porque el adaptador vio la palabra "remoto" dentro de
+# "presencial y remoto".
+CIUDADES_CO = re.compile(
+    r"\b(bogota|medellin|cali|barranquilla|cartagena|bucaramanga|pereira|"
+    r"manizales|cucuta|ibague|santa marta|villavicencio|neiva|armenia|pasto|"
+    r"monteria|valledupar|popayan|tunja|sincelejo)\b")
+
+
+def exige_otra_ciudad(modalidad: str, ubicacion: str = "", texto: str = "",
+                      ciudad: str = "cali") -> str | None:
+    """Motivo si el aviso pide presencia en una ciudad que no es la de la persona.
+
+    Se mira primero la ubicacion estructurada y solo se cae al texto libre cuando
+    no hay ninguna: en el texto, "Bogota" puede ser la sede de la empresa y no el
+    sitio del puesto. Es la misma leccion que dejo Mederi.
+
+    No entra en `descalifica()` porque necesita la modalidad ya clasificada, que
+    es un campo del adaptador y no algo que se lea del texto. Vive aqui igual
+    porque es lo mismo que las demas: no hace la vacante peor, la hace imposible.
+    """
+    if sin_tildes(modalidad or "") not in ("hibrido", "presencial"):
+        return None
+    mia = sin_tildes(ciudad or "")
+    if not mia:
+        return None
+
+    # La ubicacion estructurada manda. Solo si ahi no hay ninguna ciudad se mira
+    # el texto: muchos avisos ponen "Colombia" como ubicacion y nombran la ciudad
+    # una sola vez en el cuerpo. Caer al texto por "ubicacion vacia" no bastaba,
+    # porque "Colombia" no esta vacia y sin embargo no dice donde es.
+    ciudades = set(CIUDADES_CO.findall(sin_tildes(ubicacion or "")))
+    if not ciudades:
+        ciudades = set(CIUDADES_CO.findall(sin_tildes(texto or "")))
+    # El silencio no descarta: media bolsa colombiana no nombra la ciudad.
+    if not ciudades or mia in ciudades:
+        return None
+    return "%s en %s y la persona esta en %s" % (
+        sin_tildes(modalidad), ", ".join(sorted(ciudades)), mia)
+
+
 # ------------------------------------------------------------- certificaciones
 RE_CERT_OBLIGATORIA = re.compile(
     r"certificaci[oó]n\s+(?:iso\s*\d{4,5}|pmp|cissp|ccna|ccnp)\s*(?:vigente|obligatoria|requerida)",

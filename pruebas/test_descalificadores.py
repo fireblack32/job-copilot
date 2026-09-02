@@ -74,3 +74,43 @@ def test_la_fachada_devuelve_el_motivo_no_solo_true():
     """Sin motivo, un descarte es indistinguible de un adaptador roto."""
     motivo = D.descalifica("No es posible trabajar desde fuera de Chile", PERFIL)
     assert isinstance(motivo, str) and "Chile" in motivo
+
+
+# ---- la ciudad de una vacante con presencia
+
+def test_una_hibrida_en_otra_ciudad_queda_fuera():
+    """Por esta rendija entraron PROCIBERNETICA, Kibernum y Accenture."""
+    m = D.exige_otra_ciudad("hibrido", "Bogota, D.C.", "", "Cali")
+    assert m and "bogota" in m
+
+
+def test_una_hibrida_en_la_ciudad_de_la_persona_se_queda():
+    assert D.exige_otra_ciudad("hibrido", "Valle del Cauca Cali", "", "Cali") is None
+
+
+def test_una_remota_no_se_descarta_por_donde_este_la_empresa():
+    """NTT DATA publica desde Bogota vacantes 100% remotas."""
+    assert D.exige_otra_ciudad("remoto", "Bogota, D.C.", "", "Cali") is None
+
+
+def test_si_la_ubicacion_no_nombra_ciudad_se_mira_el_texto():
+    """'Colombia' no esta vacia y sin embargo no dice donde es."""
+    m = D.exige_otra_ciudad("hibrido", "Colombia",
+                            "Modalidad hibrida en Bogota", "Cali")
+    assert m and "bogota" in m
+
+
+def test_la_ubicacion_estructurada_manda_sobre_el_texto():
+    """La leccion de Mederi: el texto nombra sedes, la ubicacion nombra el puesto."""
+    assert D.exige_otra_ciudad("presencial", "Cali",
+                               "tenemos oficinas en Bogota y Medellin", "Cali") is None
+
+
+def test_el_silencio_sobre_la_ciudad_no_descarta():
+    assert D.exige_otra_ciudad("presencial", "", "Buscamos desarrollador", "Cali") is None
+
+
+def test_calidad_no_cuenta_como_cali():
+    """Sin limite de palabra, 'cali' aparece dentro de 'calidad'."""
+    m = D.exige_otra_ciudad("hibrido", "", "control de calidad en Bogota", "Cali")
+    assert m and "bogota" in m
