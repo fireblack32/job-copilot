@@ -62,6 +62,35 @@ GOB_CATS = ["programming", "sysadmin-devops-qa", "machine-learning-ai",
             "data-science-analytics", "technical-support", "cybersecurity"]
 
 
+#: Nombre de empresa por id, para no pedir dos veces la misma. Get on Board
+#: publica varias vacantes por empresa, asi que la cache ahorra la mayoria de
+#: las llamadas.
+_GOB_EMPRESAS = {}
+
+
+def gob_empresa(cid):
+    """Nombre de la empresa a partir del id que trae el listado.
+
+    El listado solo devuelve ``company: {data: {id: 4161}}`` -- un numero, sin
+    nombre-- y el detalle de la vacante exige autenticacion (401). Por eso el
+    tablero mostraba "Empresa no declarada" en mas de cien filas, y no se podia
+    decidir a cual postular sin abrir cada enlace.
+
+    El endpoint publico de empresas si responde y trae el nombre.
+    """
+    if cid in _GOB_EMPRESAS:
+        return _GOB_EMPRESAS[cid]
+    nombre = None
+    try:
+        d = _json("https://www.getonbrd.com/api/v0/companies/%s" % cid)
+        nombre = ((d.get("data") or {}).get("attributes") or {}).get("name")
+    except Exception:
+        pass          # sin nombre se sigue: es un dato de apoyo, no un requisito
+    _GOB_EMPRESAS[cid] = nombre
+    time.sleep(0.2)
+    return nombre
+
+
 def getonbrd(max_pages=8):
     out = []
     for cat in GOB_CATS:
@@ -74,9 +103,11 @@ def getonbrd(max_pages=8):
                 break
             for r in d.get("data", []):
                 a = r["attributes"]
+                cid = ((a.get("company") or {}).get("data") or {}).get("id")
                 out.append({
                     "fuente": "getonbrd", "id": r["id"], "titulo": a.get("title"),
-                    "empresa": None, "url": "https://www.getonbrd.com/jobs/" + r["id"],
+                    "empresa": gob_empresa(cid) if cid else None,
+                    "url": "https://www.getonbrd.com/jobs/" + r["id"],
                     "remoto": bool(a.get("remote")),
                     "ubicacion": ", ".join(a.get("countries") or []) + " | " + str(a.get("remote_modality")),
                     "sal_min": a.get("min_salary"), "sal_max": a.get("max_salary"),
