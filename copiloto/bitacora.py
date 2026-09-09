@@ -92,6 +92,34 @@ def clave(vacante: dict) -> str:
     return "%s:%s" % (fuente, ident)
 
 
+#: Sufijos societarios. La misma empresa se publica como "Usercode" en un
+#: portal y "Usercode SpA" en otro, y con eso la huella deja de calzar: una
+#: vacante descartada por "solo desde Chile" volvio a ofrecerse en el primer
+#: puesto del tablero. El sufijo no distingue empresas, asi que se quita.
+#
+# Ojo con la forma de las alternativas: se comparan contra el nombre **ya
+# normalizado**, donde los puntos son espacios. "S.A.S" no llega como "sas"
+# sino como "s a s", en tres palabras.
+_SOCIETARIO = re.compile(
+    r"\s+(?:s\s+a\s+s|s\s+a|s\s+l|e\s+i\s+r\s+l|y\s+cia|and\s+co|"
+    r"sas|spa|sac|srl|ltda|lda|ltd|llc|inc|corp|corporation|"
+    r"company|gmbh|plc|cia|co|sa|sl|bv|nv)$")
+
+
+def _sin_societario(s: str) -> str:
+    """Quita los sufijos de razon social del final del nombre.
+
+    Solo al final, y solo precedidos de espacio. Por eso "Co" dentro de "Coati"
+    y "SA" dentro de "SAP" quedan intactos: son una sola palabra, no un sufijo.
+    Se repite porque hay nombres con dos ("... Company Inc").
+    """
+    anterior = None
+    while anterior != s:
+        anterior = s
+        s = _SOCIETARIO.sub("", s)
+    return s or anterior
+
+
 def huella(vacante: dict) -> str:
     """Identidad aproximada: empresa + cargo normalizados.
 
@@ -99,7 +127,7 @@ def huella(vacante: dict) -> str:
     falta la empresa: sin ella la huella seria solo un cargo generico, y
     "Desarrollador Backend" de una empresa bloquearia el de todas las demas.
     """
-    empresa = _normalizar(str(vacante.get("empresa") or ""))
+    empresa = _sin_societario(_normalizar(str(vacante.get("empresa") or "")))
     titulo = _normalizar(str(vacante.get("titulo") or ""))
     if not empresa or not titulo:
         return ""

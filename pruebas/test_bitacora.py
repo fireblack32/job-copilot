@@ -148,3 +148,31 @@ def test_el_salario_se_muestra_como_rango_cuando_lo_hay():
     assert t._plata({"cop_min": 4_000_000, "cop_max": 9_000_000}) == "$4.0M a $9.0M"
     assert t._plata({"cop_min": 4_000_000}) == "$4.0M"
     assert t._plata({}) is None
+
+
+# ------------------------------------------- la misma empresa con otro sufijo
+
+def test_la_huella_ignora_el_sufijo_societario():
+    """El fallo real: se descarto 'Usercode - Desarrollador Full-Stack' por ser
+    solo desde Chile, y volvio como 'Usercode SpA' al primer puesto del tablero
+    cuando el adaptador empezo a traer el nombre completo de la empresa."""
+    corta = {"empresa": "Usercode", "titulo": "Desarrollador Full-Stack"}
+    larga = {"empresa": "Usercode SpA", "titulo": "Desarrollador Full-Stack"}
+    assert b.huella(corta) == b.huella(larga)
+
+
+def test_la_huella_ignora_varios_sufijos():
+    base = b.huella({"empresa": "Makers Solutions", "titulo": "Dev"})
+    for nombre in ("Makers Solutions S.A.S", "Makers Solutions LTDA",
+                   "Makers Solutions Inc", "Makers Solutions S.A."):
+        assert b.huella({"empresa": nombre, "titulo": "Dev"}) == base, nombre
+
+
+def test_no_recorta_un_sufijo_que_es_parte_del_nombre():
+    """'Co' dentro de 'Coati' no es sufijo, y 'SA' dentro de 'SAP' tampoco."""
+    assert b.huella({"empresa": "Coati", "titulo": "Dev"}) == "coati|dev"
+    assert b.huella({"empresa": "SAP", "titulo": "Dev"}) == "sap|dev"
+
+
+def test_una_empresa_que_es_solo_sufijo_no_queda_vacia():
+    assert b.huella({"empresa": "Inc", "titulo": "Dev"}) == "inc|dev"
