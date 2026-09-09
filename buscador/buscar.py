@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fuentes
 import fuentes_co
 import fuentes_cali
+import fuentes_latam
 import perfilado
 import descalificadores
 
@@ -25,6 +26,10 @@ fuentes.ADAPTADORES.update({
     "computrabajo-cali": fuentes_cali.computrabajo_cali,
     "elempleo-cali": fuentes_cali.elempleo_cali,
 })
+
+# El resto de LATAM hispanohablante, con el mismo motor de Computrabajo. Solo
+# recogen remotas: una presencial en Lima no le sirve a quien vive en Cali.
+fuentes.ADAPTADORES.update(fuentes_latam.ADAPTADORES)
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 RES = os.path.join(AQUI, "..", "resultados")
@@ -194,6 +199,55 @@ def puntuar(texto, titulo):
 
 
 # ------------------------------------------------------------------- pipeline
+def _consultar_por_todos_los_perfiles(perfil):
+    """Reemplaza los terminos de consulta de cada portal por los del perfil.
+
+    Los adaptadores traian sus terminos escritos a mano y **todos eran de
+    software**: desarrollador, programador, devops, react, node.js, python. Ni
+    una sola consulta de NOC, redes, fibra optica, mantenimiento, automatizacion
+    o electronica. La persona es Ingeniera Electronica con tres carreras
+    encima -- desarrollo, telecomunicaciones e industrial -- y el buscador solo
+    preguntaba por la primera.
+
+    El sintoma fue una conclusion falsa: "Cali esta agotado, tres barridos dan
+    las mismas cinco vacantes". Cali no estaba agotado. Al portal solo se le
+    preguntaba por desarrollo. Con los terminos de los otros dos perfiles, cada
+    consulta a Computrabajo Cali devuelve pagina llena.
+
+    Los adaptadores se llaman sin argumentos (`fn()`), asi que la inyeccion se
+    hace sobre la variable de modulo. Es menos elegante que pasarlos por
+    parametro, pero no obliga a cambiar la firma de nueve adaptadores.
+    """
+    slugs = perfilado.terminos_portal(perfil, "slug")
+    textos = perfilado.terminos_portal(perfil, "texto")
+    if not slugs and not textos:
+        return
+
+    if slugs:
+        fuentes_cali.CT_TERMINOS = slugs
+        fuentes_co.CT_BUSQUEDAS = slugs
+        fuentes_latam.CT_BUSQUEDAS = slugs
+        fuentes_cali.EE_CALI = [
+            "https://www.elempleo.com/co/ofertas-empleo/trabajo-en-cali",
+            "https://www.elempleo.com/co/ofertas-empleo/ciudad-cali",
+        ] + ["https://www.elempleo.com/co/ofertas-empleo/trabajo-%s-en-cali" % s
+             for s in slugs]
+        fuentes_co.EE_LISTADOS = [
+            "https://www.elempleo.com/co/ofertas-empleo/modalidad-remoto",
+        ] + ["https://www.elempleo.com/co/ofertas-empleo/trabajo-%s" % s
+             for s in slugs]
+    if textos:
+        fuentes_co.TORRE_QUERIES = textos
+
+    print("  consultas : %d slug (Computrabajo/elempleo), %d texto (Torre)"
+          % (len(slugs), len(textos)))
+    for po in sorted(perfil.get("perfiles_objetivo") or [],
+                     key=lambda p: p.get("prioridad", 99)):
+        tp = po.get("terminos_portal") or {}
+        print("              %-20s slug=%d texto=%d"
+              % (po.get("id"), len(tp.get("slug") or []), len(tp.get("texto") or [])))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--fuentes", default=",".join(fuentes.ADAPTADORES))
@@ -218,6 +272,16 @@ def main():
         SKILLS.clear()
         SKILLS.update(derivados)
         _PATRON_SKILL.clear()
+
+    # Lo que resta puntaje tambien describe a una persona concreta. Para Jhon
+    # son las vacantes de potencia electrica --RETIE, subestaciones, media y
+    # alta tension--: eso es trabajo de ingeniero ELECTRICO y el es ELECTRONICO.
+    # Sin esto, ampliar la busqueda a lo industrial llenaba el tablero de
+    # vacantes de electricista que nunca va a postular.
+    propios = (perfil.get("criterios_busqueda") or {}).get("descuenta")
+    if propios:
+        DESCUENTA.extend(d for d in propios if d not in DESCUENTA)
+        print("  descuenta :", len(DESCUENTA), "terminos")
     global PISO_COP, PISO_CALI, ES_CALI
     PISO_COP = criterios.piso_remoto
     PISO_CALI = criterios.piso_presencial
@@ -225,6 +289,7 @@ def main():
         ES_CALI = perfilado.patron_ciudad(criterios.ciudad)
     print("  criterios :", criterios)
     print("  habilidades puntuables:", len(SKILLS))
+    _consultar_por_todos_los_perfiles(perfil)
 
     if args.desde_crudo:
         dedup = json.load(io.open(os.path.join(RES, "crudo.json"), encoding="utf-8"))
@@ -233,7 +298,8 @@ def main():
         return _rankear(dedup, crudo, args, perfil, criterios)
 
     crudo = []
-    for nombre in [f.strip() for f in args.fuentes.split(",") if f.strip()]:
+    pedidas = [f.strip() for f in args.fuentes.split(",") if f.strip()]
+    for nombre in pedidas:
         fn = fuentes.ADAPTADORES.get(nombre)
         if not fn:
             print("fuente desconocida:", nombre)
@@ -246,6 +312,30 @@ def main():
             continue
         print(len(filas))
         crudo.extend(filas)
+
+    # Un barrido parcial se SUMA a lo que ya habia; no lo reemplaza.
+    #
+    # Sin esto, `--fuentes computrabajo-cl` reescribia crudo.json entero con lo
+    # poco que trajo esa fuente. Paso de verdad: relanzar ocho fuentes para
+    # probar un arreglo dejo el archivo en 84 KB y el ranking en 4 candidatas,
+    # habiendo tenido 2.106 avisos y 301 candidatas. Veinticinco minutos de
+    # barrido perdidos y ningun aviso de que algo se estaba borrando.
+    #
+    # Las fuentes recolectadas ahora mandan sobre lo viejo --sus avisos estan
+    # frescos-- y del archivo previo se conserva lo que venga de otras fuentes.
+    if set(pedidas) != set(fuentes.ADAPTADORES):
+        previo = os.path.join(RES, "crudo.json")
+        if os.path.exists(previo):
+            try:
+                antes = json.load(io.open(previo, encoding="utf-8"))
+            except Exception as e:
+                antes = []
+                print("  aviso: no se pudo leer el crudo anterior (%s)" % e)
+            conservados = [r for r in antes if r.get("fuente") not in set(pedidas)]
+            if conservados:
+                print("  barrido parcial: se conservan %d avisos de %d fuentes no barridas"
+                      % (len(conservados), len({r.get("fuente") for r in conservados})))
+                crudo = conservados + crudo
 
     # deduplicar por (fuente, id) y por (titulo, empresa)
     vistos, dedup = set(), []
