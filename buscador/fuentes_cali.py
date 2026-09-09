@@ -155,10 +155,35 @@ CT_TERMINOS = [
 ]
 
 
-def computrabajo_cali(paginas=3, max_detalle=90):
+def _por_turnos(por_termino):
+    """Intercala las fichas de cada termino, una por vuelta.
+
+    Importa por como se recorta despues. El listado es barato y el detalle es
+    caro, asi que hay un tope de detalles. Cuando las fichas van una detras de
+    otra en orden de recoleccion, ese tope se lo come el primer termino: con
+    tres paginas por termino son ~60 fichas cada uno, asi que un tope de 90
+    alcanzaba para **termino y medio**.
+
+    Con ocho terminos de desarrollo eso ya era malo. Al pasar a veintitres
+    terminos --sumando telecomunicaciones e industrial-- se volvio absurdo: se
+    recolectaban los avisos de PLC y fibra optica y se descartaban antes de
+    mirarlos, y Cali daba menos candidatas que antes de ampliar la busqueda.
+
+    Por turnos, el tope se reparte entre todos los terminos.
+    """
+    fuera = []
+    for i in range(max((len(v) for v in por_termino.values()), default=0)):
+        for fichas in por_termino.values():
+            if i < len(fichas):
+                fuera.append(fichas[i])
+    return fuera
+
+
+def computrabajo_cali(paginas=3, max_detalle=180):
     """Vacantes en Cali. A diferencia del adaptador remoto, NO filtra por remoto."""
-    fichas, vistos = [], set()
+    por_termino, vistos = {}, set()
     for termino in CT_TERMINOS:
+        fichas = por_termino.setdefault(termino, [])
         for p in range(1, paginas + 1):
             url = "https://co.computrabajo.com/trabajo-de-%s-en-cali" % termino
             if p > 1:
@@ -188,7 +213,7 @@ def computrabajo_cali(paginas=3, max_detalle=90):
             time.sleep(0.45)
 
     out = []
-    for f in fichas[:max_detalle]:
+    for f in _por_turnos(por_termino)[:max_detalle]:
         try:
             s = _get(f["url"], timeout=30)
         except Exception:
@@ -226,9 +251,10 @@ EE_CALI = [
 ]
 
 
-def elempleo_cali(max_detalle=70):
-    fichas, vistos = [], set()
+def elempleo_cali(max_detalle=140):
+    por_listado, vistos = {}, set()
     for url in EE_CALI:
+        fichas = por_listado.setdefault(url, [])
         try:
             s = _get(url, timeout=35)
         except Exception as e:
@@ -243,6 +269,9 @@ def elempleo_cali(max_detalle=70):
                         vistos.add(oid)
                         fichas.append({"url": oid, "titulo": item.get("name")})
         time.sleep(0.5)
+    # Mismo reparto por turnos que en Computrabajo: sin el, el tope de detalles
+    # se lo comen los dos primeros listados y los de ingenieria no se abren.
+    fichas = _por_turnos(por_listado)
 
     out = []
     for f in fichas[:max_detalle]:

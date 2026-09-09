@@ -38,7 +38,13 @@ PESOS_POR_FAMILIA = {
     "ia": 6,
     "bases_de_datos": 3,
     "cloud_devops": 4,
+    # Dos nombres para la misma familia: el codigo decia `redes_telecom` y el
+    # perfil dice `telecomunicaciones`. No coincidian, asi que DWDM, NMS,
+    # SPECTRUM y fibra optica caian al peso por defecto (3) en vez del 5 que se
+    # pretendia, y una vacante de NOC puntuaba por debajo de una de desarrollo
+    # que la mencionara de pasada.
     "redes_telecom": 5,
+    "telecomunicaciones": 5,
     "industrial": 4,
     "metodologias": 2,
     "herramientas": 2,
@@ -131,18 +137,76 @@ def pesos_de_habilidades(perfil: dict, extra: dict | None = None) -> dict:
 def terminos_de_busqueda(perfil: dict, maximo: int = 12) -> list[str]:
     """Terminos con que se consulta cada portal, sacados de los cargos objetivo.
 
-    Se ordena por prioridad del perfil y se recorta: pedirle cuarenta terminos a
-    un portal no da mejores resultados, da mas tiempo de espera y mas 429.
+    El recorte reparte el cupo **entre perfiles**, no por orden de prioridad.
+    Antes cortaba por orden y con eso se perdia el ultimo perfil entero: los
+    cargos de desarrollo eran nueve, asi que con `maximo=12` entraban tres de
+    telecomunicaciones y **cero de industrial**. La persona tiene tres carreras
+    y el buscador solo preguntaba por una.
     """
-    terminos: list[str] = []
     perfiles = sorted(perfil.get("perfiles_objetivo") or [],
                       key=lambda p: p.get("prioridad", 99))
+    listas = [[str(c).strip() for c in (po.get("cargos_objetivo") or []) if str(c).strip()]
+              for po in perfiles]
+    return _repartir(listas, maximo)
+
+
+def _repartir(listas: list[list[str]], maximo: int | None) -> list[str]:
+    """Intercala varias listas y recorta, dandole turno a cada una.
+
+    Se toma un elemento de cada lista por vuelta. Asi, si hay que recortar, lo
+    que se pierde es la cola de cada perfil y no un perfil completo.
+    """
+    fuera: list[str] = []
+    vistos: set[str] = set()
+    for i in range(max((len(l) for l in listas), default=0)):
+        for l in listas:
+            if i >= len(l):
+                continue
+            clave = sin_tildes(l[i])
+            if clave in vistos:
+                continue
+            vistos.add(clave)
+            fuera.append(l[i])
+    return fuera if maximo is None else fuera[:maximo]
+
+
+def terminos_portal(perfil: dict, forma: str, maximo: int | None = None) -> list[str]:
+    """Terminos ya verificados contra un portal, repartidos entre los perfiles.
+
+    Cada perfil objetivo puede declarar `terminos_portal` con dos formas, porque
+    los portales no piden lo mismo:
+
+      - ``slug``  -> Computrabajo y elempleo, que arman la URL con el termino
+                     (``/trabajo-de-ingeniero-de-telecomunicaciones-en-cali``).
+      - ``texto`` -> Torre, que recibe la consulta como texto libre.
+
+    Estan en el perfil y no en el codigo por la misma razon que todo lo demas:
+    describen a **quien busca**. Y estan escritos a mano en vez de derivados de
+    los cargos porque cada uno se probo contra el portal real; derivarlos daba
+    consultas muertas (``ingeniero-noc`` devuelve cero avisos en Computrabajo) o
+    ruidosas (``noc`` en Torre devuelve "Medico Veterinario Nocturno").
+
+    Si un perfil no los declara, se cae a los cargos objetivo convertidos a slug,
+    que es peor pero no deja al portal sin consultar.
+    """
+    perfiles = sorted(perfil.get("perfiles_objetivo") or [],
+                      key=lambda p: p.get("prioridad", 99))
+    listas = []
     for po in perfiles:
-        for cargo in (po.get("cargos_objetivo") or []):
-            c = str(cargo).strip()
-            if c and c.lower() not in {t.lower() for t in terminos}:
-                terminos.append(c)
-    return terminos[:maximo]
+        declarados = (po.get("terminos_portal") or {}).get(forma)
+        if declarados:
+            listas.append([str(t).strip() for t in declarados if str(t).strip()])
+        elif forma == "slug":
+            listas.append([a_slug(c) for c in (po.get("cargos_objetivo") or []) if a_slug(c)])
+        else:
+            listas.append([str(c).strip() for c in (po.get("cargos_objetivo") or []) if str(c).strip()])
+    return _repartir(listas, maximo)
+
+
+def a_slug(texto: str) -> str:
+    """Convierte un cargo en el segmento de URL que usan los portales colombianos."""
+    s = re.sub(r"[^a-z0-9]+", "-", sin_tildes(texto))
+    return s.strip("-")
 
 
 def bloquea_idioma(criterios: Criterios) -> bool:
