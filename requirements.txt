@@ -1,0 +1,19 @@
+# Dependencias de Python del copiloto.
+#
+# Estaban solo en el README como dos comandos sueltos, y cada reinstalacion del
+# equipo obligaba a adivinar cual faltaba. Con esto: pip install -r requirements.txt
+
+# Cadena de CA completa de Mozilla.
+#
+# No es opcional en Windows: el almacen del sistema trae las raices pero no las
+# intermedias, y Python no las busca sobre la marcha como si hace el navegador.
+# Sin certifi, Computrabajo --sus diez fuentes-- falla entero con
+# CERTIFICATE_VERIFY_FAILED y el barrido pierde todo lo de Cali y LATAM sin que
+# nada mas se rompa, que es la peor forma de fallar.
+certifi>=2024.2.2
+
+# Lectura de los PDF del CV en el generador.
+pypdf>=4.0.0
+
+# Las pruebas.
+pytest>=8.0.0

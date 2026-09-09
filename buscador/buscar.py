@@ -66,7 +66,8 @@ def refrescar_tasas():
     try:
         req = urllib.request.Request("https://open.er-api.com/v6/latest/COP",
                                      headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=25) as r:
+        # Mismo contexto TLS que los adaptadores: ver fuentes._contexto_tls.
+        with urllib.request.urlopen(req, timeout=25, context=fuentes._TLS) as r:
             rates = json.loads(r.read().decode("utf-8"))["rates"]
         for m in list(TASAS_COP):
             if m in rates and rates[m]:

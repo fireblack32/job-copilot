@@ -83,9 +83,13 @@ El `.docx` resultante está pensado para pasar filtros ATS: una sola columna, si
 ## Uso
 
 ```bash
-pip install pypdf
-cd generador && npm install docx
+pip install -r requirements.txt
+cd generador && npm install
 ```
+
+En Windows, `certifi` no es opcional: sin él, Computrabajo falla entero con
+`CERTIFICATE_VERIFY_FAILED` y el barrido pierde Cali y LATAM sin más aviso que
+un error por consulta.
 
 ```bash
 # barrido completo

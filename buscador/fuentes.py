@@ -21,9 +21,38 @@ Cada adaptador devuelve una lista de dicts con el esquema unificado:
 Solo se usan APIs publicas y paginas publicas de listado. No se automatiza
 ninguna postulacion desde aqui.
 """
-import json, re, html, time, urllib.request, urllib.error
+import json, re, html, ssl, time, urllib.request, urllib.error
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+
+
+def _contexto_tls():
+    """Contexto TLS que verifica contra el paquete de CA de certifi.
+
+    En Windows, el contexto por defecto de Python valida contra el almacen del
+    sistema, que trae las CA raiz pero **no las intermedias**: las pide el
+    navegador sobre la marcha (AIA chasing) y Python no hace eso. Un servidor
+    que sirve la cadena incompleta valida en el navegador y falla aqui con
+    ``CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate``.
+
+    Es exactamente lo que pasa con Computrabajo: en un barrido completo se
+    cayeron sus diez fuentes --Colombia, Cali y los ocho paises de LATAM-- y
+    devolvieron cero avisos, mientras Torre, Get on Board y elempleo entraban
+    sin problema. No fue un bloqueo del portal ni un cambio de HTML: fue el
+    almacen de certificados de una instalacion nueva de Python.
+
+    certifi trae la cadena completa de Mozilla y resuelve el caso. Si no esta
+    instalado se cae al contexto por defecto, que sirve para el resto de los
+    portales: mejor perder una fuente que no arrancar.
+    """
+    try:
+        import certifi
+    except ImportError:
+        return None
+    return ssl.create_default_context(cafile=certifi.where())
+
+
+_TLS = _contexto_tls()
 
 
 def _get(url, data=None, headers=None, timeout=40):
@@ -35,7 +64,7 @@ def _get(url, data=None, headers=None, timeout=40):
         body = json.dumps(data).encode("utf-8")
         h["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=body, headers=h)
-    with urllib.request.urlopen(req, timeout=timeout) as r:
+    with urllib.request.urlopen(req, timeout=timeout, context=_TLS) as r:
         return r.read().decode("utf-8", "replace")
 
 
