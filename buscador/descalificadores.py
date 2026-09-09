@@ -40,12 +40,20 @@ RE_NIVEL_MCER = re.compile(r"\b([abc][12])\b", re.I)
 
 #: Formas de exigir ingles de trabajo sin dar un nivel. Todas implican sostener
 #: una conversacion, que es justo lo que un B1 no garantiza.
+#: `\W+(?:\w+\W+){0,3}?` deja pasar hasta tres palabras entre el adjetivo y
+#: "english". Sin eso, "fluent english" se detectaba y **"fluent written
+#: english" no**: una sola palabra en medio rompia el patron. Se colo asi la
+#: vacante mejor puntuada de todo un barrido (52 pts, $8M), que pedia justo eso.
+_HUECO = r"\W+(?:\w+\W+){0,3}?"
+
 RE_INGLES_DE_TRABAJO = re.compile(
     r"requiere postular en ingl[eé]s|"
     r"ingl[eé]s\s+(avanzado|fluido|fluidez|profesional|conversacional|nativo|de negocios)|"
-    r"(advanced|fluent|proficient|professional|business|native)\s+english|"
-    r"english\s+(level\s+)?(c1|c2|advanced|fluent|proficiency|required|is required)|"
+    r"(advanced|fluent|proficient|professional|business|native|strong|excellent)"
+    + _HUECO + r"english|"
+    r"english\s+(level\s+)?(c1|c2|advanced|fluent|fluency|proficiency|required|is required)|"
     r"must\s+(be\s+)?(fluent|proficient)\s+in\s+english|"
+    r"(communicate|communication|proficiency|fluency)" + _HUECO + r"in\s+english|"
     r"dominio\s+(del\s+)?ingl[eé]s",
     re.I,
 )
@@ -193,6 +201,50 @@ def exige_certificacion(texto: str, certificaciones: list[str] | None = None) ->
     return "exige %s" % m.group(0).strip()
 
 
+# ------------------------------------------------- avisos en un tercer idioma
+#
+# El filtro de idioma solo miraba ingles, porque el supuesto era que un aviso o
+# esta en espanol o esta en ingles. Los agregadores europeos rompen ese
+# supuesto: por arbeitnow.fr entro un "Developpeur fullstack confirme H/F" de
+# Lyon, en frances, con 50 puntos y en el quinto puesto del tablero.
+#
+# Se cuentan palabras funcionales, no tecnicas: "developpeur" se parece
+# demasiado a "desarrollador" y "React" es igual en todos los idiomas.
+_MARCADORES = {
+    "frances": re.compile(
+        r"\b(nous|vous|votre|notre|etre|avec|pour|dans|sur|des|les|une|"
+        r"recherchons|profil|entreprise|competences|poste|salaire|"
+        r"experience|equipe|travail|missions|souhait[ée]e?)\b", re.I),
+    "portugues": re.compile(
+        r"\b(voc[eê]|n[oó]s|com|para|em|dos|das|uma|dever[aá]|"
+        r"conhecimento|equipe|vaga|requisitos|desej[aá]vel|"
+        r"experi[eê]ncia|trabalho|atua[cç][aã]o)\b", re.I),
+    "italiano": re.compile(
+        r"\b(noi|tu|con|per|nel|della|delle|una|"
+        r"esperienza|competenze|azienda|ricerchiamo|lavoro)\b", re.I),
+}
+
+#: Umbral alto a proposito. Un aviso en espanol comparte palabras con el
+#: italiano y el portugues ("con", "para", "una"), asi que pedir pocas
+#: coincidencias descartaria vacantes buenas.
+_MINIMO_MARCADORES = 6
+
+
+def otro_idioma(texto: str) -> str | None:
+    """Motivo si el aviso esta escrito en un idioma que no es espanol ni ingles.
+
+    El ingles tiene su propio descalificador, que ademas distingue entre "el
+    aviso esta en ingles" y "el trabajo exige ingles", que no es lo mismo.
+    """
+    t = texto or ""
+    if len(t) < 200:
+        return None                 # muy corto: cualquier conteo es ruido
+    for idioma, patron in _MARCADORES.items():
+        if len(set(m.lower() for m in patron.findall(t))) >= _MINIMO_MARCADORES:
+            return "el aviso esta en %s" % idioma
+    return None
+
+
 # ------------------------------------------------------------------- fachada
 def descalifica(texto: str, perfil: dict | None = None) -> str | None:
     """Devuelve el primer motivo de descarte, o None si la vacante es viable.
@@ -218,6 +270,7 @@ def descalifica(texto: str, perfil: dict | None = None) -> str | None:
 
     for comprobar in (
         lambda: exige_ingles(texto, nivel),
+        lambda: otro_idioma(texto),
         lambda: restringe_pais(texto, pais),
         lambda: exige_certificacion(texto, certs),
     ):

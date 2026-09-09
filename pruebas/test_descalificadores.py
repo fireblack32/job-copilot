@@ -114,3 +114,67 @@ def test_calidad_no_cuenta_como_cali():
     """Sin limite de palabra, 'cali' aparece dentro de 'calidad'."""
     m = D.exige_otra_ciudad("hibrido", "", "control de calidad en Bogota", "Cali")
     assert m and "bogota" in m
+
+
+# ------------------------------------- ingles pedido con palabras intercaladas
+
+def test_detecta_ingles_fluido_con_palabras_en_medio():
+    """El fallo real: 'fluent english' se detectaba y 'fluent written english'
+    no. Se colo la vacante mejor puntuada de un barrido (52 pts, $8M)."""
+    assert D.exige_ingles("Fluent written English and daily overlap with US hours")
+
+
+def test_detecta_las_formulas_sin_nivel():
+    for frase in ("Strong written and verbal English",
+                  "English fluency is a must",
+                  "Excellent communication skills in English",
+                  "Professional working proficiency in English"):
+        assert D.exige_ingles(frase), frase
+
+
+def test_no_descarta_por_nombrar_el_idioma_al_pasar():
+    """Un aviso en espanol que menciona ingles como deseable no se descarta."""
+    assert D.exige_ingles("Deseable: ingles basico. El equipo trabaja en espanol.") is None
+    assert D.exige_ingles("Documentacion tecnica en ingles y espanol") is None
+
+
+# ----------------------------------------------- avisos en un tercer idioma
+
+FRANCES = """Developpeur fullstack confirme H/F. Nous recherchons pour notre
+entreprise un developpeur avec de l'experience sur C#, .Net et Angular. Vous
+serez integre dans une equipe agile. Votre profil: formation superieure, des
+competences solides en developpement web. Le poste est base a Lyon, avec un
+salaire selon experience. Les missions incluent la conception et le
+developpement des applications pour les clients."""
+
+PORTUGUES = """Vaga para desenvolvedor backend. Voce vai atuar com uma equipe
+agil no desenvolvimento de APIs. Requisitos: conhecimento em Python e SQL,
+experiencia com nuvem. Desejavel conhecimento em Docker. O trabalho e remoto
+para todo o Brasil, com atuacao em projetos dos nossos clientes."""
+
+ESPANOL = """Buscamos un desarrollador full stack con experiencia en React y
+Node.js para trabajar con nuestro equipo en proyectos de clientes. Requisitos:
+conocimiento de SQL, Docker y nube. El trabajo es remoto para toda Colombia,
+con un salario segun experiencia. Las funciones incluyen el desarrollo y el
+mantenimiento de aplicaciones web para los usuarios."""
+
+
+def test_descarta_un_aviso_en_frances():
+    """El fallo real: por arbeitnow.fr entro un aviso de Lyon en frances con 50
+    puntos, quinto en el tablero. El filtro solo miraba ingles."""
+    assert D.otro_idioma(FRANCES) == "el aviso esta en frances"
+
+
+def test_descarta_un_aviso_en_portugues():
+    assert D.otro_idioma(PORTUGUES) == "el aviso esta en portugues"
+
+
+def test_no_descarta_un_aviso_en_espanol():
+    """El espanol comparte palabras con el italiano y el portugues; el umbral
+    tiene que ser lo bastante alto para no descartar lo que si sirve."""
+    assert D.otro_idioma(ESPANOL) is None
+
+
+def test_no_juzga_textos_muy_cortos():
+    """Torre expone ~300 caracteres; contar marcadores ahi es adivinar."""
+    assert D.otro_idioma("Nous recherchons un developpeur") is None
