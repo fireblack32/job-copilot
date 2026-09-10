@@ -31,6 +31,10 @@ generador/fix_acentos.py
 ESTADO-SESION.md
 generador/add_proyectos.py
 
+# Material de ingles: el mazo lleva el historial laboral, la pretension salarial
+# y los limites declarados de una persona concreta. El repo es publico.
+ingles/
+
 # Formulario generado con datos personales
 formulario-*.html
 
