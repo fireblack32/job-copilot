@@ -7,7 +7,7 @@ contra el perfil maestro.
 
 Escribe  resultados/crudo.json  y  resultados/ranking.json .
 """
-import argparse, io, json, os, re, sys, unicodedata
+import argparse, io, json, os, re, sys, time, unicodedata
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fuentes
@@ -98,7 +98,11 @@ def a_cop_mes(sal, moneda, periodo):
 
 # ------------------------------------------------------ filtros de exclusion
 ENGLISH_DURO = [
-    r"ingl[eé]s\s*(nivel\s*)?(b2|c1|c2)", r"ingl[eé]s\s+(avanzado|fluido|nativo|conversacional)",
+    r"ingl[eé]s\s*(nivel\s*)?(b2|c1|c2)",
+    # "intermedio-avanzado" e "intermedio alto" describen un oral que la persona
+    # no tiene, y los anuncios los piden como indispensables. Sin esta forma el
+    # patron solo veia "ingles avanzado" y dejaba pasar nueve avisos.
+    r"ingl[eé]s\s+(intermedio\s*[-/y]?\s*(a\s+)?)?(avanzado|fluido|nativo|conversacional|alto)\b",
     r"(advanced|fluent|proficient|native|professional|excellent)\s+(written\s+and\s+spoken\s+)?english",
     r"english\s*(level\s*)?(b2|c1|c2)", r"english\s+(is\s+)?(required|mandatory|fluency)",
     r"100%\s*(en|in)\s*(ingl[eé]s|english)", r"\(english\)", r"dominio\s+(del\s+)?ingl[eé]s",
@@ -111,6 +115,27 @@ MARCADORES_ES = ["experiencia", "conocimiento", "desarrollo", "empresa", "equipo
 MARCADORES_EN = ["experience", "requirements", "you will", "we are", "the team",
                  "years", "with", "that", "our", "role"]
 
+#: Cache de patrones de marcador, por la misma razon que en las habilidades.
+_PATRON_MARCADOR = {}
+
+
+def _contar(low, palabras):
+    """Cuenta apariciones como palabra completa, no como subcadena.
+
+    Contar subcadenas es lo que dejaba pasar avisos escritos enteros en ingles:
+    "con" aparece dentro de *context*, *control*, *continuous*; "que" dentro de
+    *unique* y *request*; "para" dentro de *separate*. Un aviso en ingles asi
+    acumulaba decenas de falsas palabras en espanol y la proporcion nunca
+    saltaba. Sobre un tablero de 265 candidatas se habian colado 18.
+    """
+    total = 0
+    for w in palabras:
+        if w not in _PATRON_MARCADOR:
+            k = sin_tildes(w)
+            _PATRON_MARCADOR[w] = re.compile(r"(?<!\w)" + re.escape(k) + r"(?!\w)")
+        total += len(_PATRON_MARCADOR[w].findall(low))
+    return total
+
 
 def idioma_bloquea(texto, titulo=""):
     low = sin_tildes((titulo or "") + " " + texto)
@@ -118,8 +143,8 @@ def idioma_bloquea(texto, titulo=""):
         m = re.search(p, low)
         if m:
             return "requisito: " + m.group(0)[:45]
-    es = sum(low.count(w) for w in MARCADORES_ES)
-    en = sum(low.count(w) for w in MARCADORES_EN)
+    es = _contar(low, MARCADORES_ES)
+    en = _contar(low, MARCADORES_EN)
     if en > 6 and en > es * 3:
         return "aviso redactado en ingles"
     return None
@@ -199,6 +224,62 @@ def puntuar(texto, titulo):
     return pts, hits, contras, (max(anios) if anios else None)
 
 
+CACHE_TORRE = "torre-idiomas.json"
+
+
+def _depurar_torre(rank, descartes, motivos, sin_red=False):
+    """Saca las de Torre que estan en ingles, exigen ingles o ya cerraron.
+
+    Va aparte del filtro de idioma porque necesita red: la busqueda de Torre no
+    trae el idioma, hay que preguntarlo por aviso (ver fuentes_co.detalle_torre).
+    Por eso corre **al final y solo sobre las candidatas**, que son una decima
+    parte de lo recolectado, y guarda lo consultado en disco: un aviso se
+    pregunta una vez y los barridos siguientes lo leen del cache.
+
+    Un fallo de red no descarta: se prefiere una candidata de mas que perder una
+    buena por un timeout.
+    """
+    ruta = os.path.join(RES, CACHE_TORRE)
+    cache = {}
+    if os.path.exists(ruta):
+        try:
+            cache = json.load(io.open(ruta, encoding="utf-8"))
+        except Exception:
+            cache = {}
+
+    pendientes = [r for r in rank if r["fuente"] == "torre" and r["id"] not in cache]
+    if pendientes and not sin_red:
+        print("  torre: consultando idioma de %d avisos (%d en cache)"
+              % (len(pendientes), len(cache)))
+        for r in pendientes:
+            d = fuentes_co.detalle_torre(r["id"])
+            if d is not None:
+                cache[r["id"]] = d
+            time.sleep(0.2)
+        try:
+            json.dump(cache, io.open(ruta, "w", encoding="utf-8"), ensure_ascii=False)
+        except Exception as e:
+            print("  aviso: no se pudo guardar el cache de torre (%s)" % e)
+
+    fuera = []
+    for r in rank:
+        if r["fuente"] != "torre":
+            continue
+        d = cache.get(r["id"])
+        if not d:
+            continue                      # sin dato: se conserva
+        if d.get("estado") == "closed":
+            fuera.append((r, "el aviso de Torre ya esta cerrado"))
+        elif d.get("ingles") or d.get("locale") == "en":
+            fuera.append((r, "aviso de Torre en ingles o que exige ingles conversacional"))
+
+    for r, motivo in fuera:
+        descartes["idioma"] += 1
+        motivos[motivo] = motivos.get(motivo, 0) + 1
+    descartados = {id(r) for r, _ in fuera}
+    return [r for r in rank if id(r) not in descartados]
+
+
 # ------------------------------------------------------------------- pipeline
 def _consultar_por_todos_los_perfiles(perfil):
     """Reemplaza los terminos de consulta de cada portal por los del perfil.
@@ -256,6 +337,9 @@ def main():
     ap.add_argument("--min-pts", type=int, default=14)
     #: Vuelve a filtrar y puntuar lo ya recolectado, sin tocar los portales.
     #: Un barrido tarda veinte minutos; probar una regla nueva no deberia.
+    ap.add_argument("--sin-red", action="store_true",
+                    help="No consultar a Torre el idioma de los avisos nuevos; "
+                         "usa solo lo que ya este en el cache.")
     ap.add_argument("--desde-crudo", action="store_true",
                     help="Reprocesa resultados/crudo.json en vez de barrer.")
     args = ap.parse_args()
@@ -496,6 +580,9 @@ def _rankear(dedup, crudo, args, perfil, criterios):
         else:
             grupo = 2
         return (grupo, not r["latam"], -r["pts"], -(r["cop_max"] or r["cop_min"] or 0))
+
+    rank = _depurar_torre(rank, descartes, motivos_descarte,
+                          sin_red=getattr(args, "sin_red", False))
 
     rank.sort(key=clave)
     json.dump(rank, io.open(os.path.join(RES, "ranking.json"), "w", encoding="utf-8"),

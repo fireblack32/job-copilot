@@ -68,8 +68,8 @@ def _get(url, data=None, headers=None, timeout=40):
         return r.read().decode("utf-8", "replace")
 
 
-def _json(url, data=None, headers=None):
-    return json.loads(_get(url, data, headers))
+def _json(url, data=None, headers=None, timeout=40):
+    return json.loads(_get(url, data, headers, timeout=timeout))
 
 
 def _strip(h):

@@ -15,6 +15,41 @@ TORRE_QUERIES = ["react", "node.js", "python", "full stack", "devops", "javascri
                  "django", "aws"]
 
 
+#: Fluencias de Torre que implican sostener una conversacion en el idioma.
+FLUENCIA_BLOQUEA = {"conversational", "fully-fluent", "native"}
+
+
+def detalle_torre(oid, timeout=15):
+    """Idioma del aviso, idiomas exigidos y estado de una oportunidad de Torre.
+
+    La busqueda **no devuelve nada de esto**: se probaron `language`,
+    `languages` y `locale` como filtros y los ignora o responde 400. Y es justo
+    lo que decide si el aviso sirve. Al consultarlo aviso por aviso sobre las
+    113 candidatas de Torre de un tablero: **94 estaban en ingles y exigian
+    ingles conversacional o mas** --16 de ellas fully-fluent-- y 17 ya estaban
+    cerradas. El texto que guarda el adaptador es demasiado corto (unos 300
+    caracteres: titulo, una linea de resumen y la lista de habilidades) para que
+    el detector de idioma por marcadores note nada.
+
+    Devuelve None si la consulta falla: ante la duda no se descarta el aviso.
+    """
+    try:
+        d = _json("https://torre.ai/api/suite/opportunities/" + oid, timeout=timeout)
+    except Exception:
+        return None
+    idiomas = []
+    for l in (d.get("languages") or []):
+        lang = l.get("language")
+        nombre = lang.get("name") if isinstance(lang, dict) else lang
+        idiomas.append((nombre or "", l.get("fluency") or ""))
+    return {
+        "locale": d.get("locale"),
+        "idiomas": idiomas,
+        "estado": d.get("status"),
+        "ingles": any(n.lower() == "english" and f in FLUENCIA_BLOQUEA for n, f in idiomas),
+    }
+
+
 def torre(paginas=4, size=20):
     out, vistos = [], set()
     for q in TORRE_QUERIES:

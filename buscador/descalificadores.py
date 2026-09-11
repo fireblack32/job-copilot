@@ -48,7 +48,11 @@ _HUECO = r"\W+(?:\w+\W+){0,3}?"
 
 RE_INGLES_DE_TRABAJO = re.compile(
     r"requiere postular en ingl[eé]s|"
-    r"ingl[eé]s\s+(avanzado|fluido|fluidez|profesional|conversacional|nativo|de negocios)|"
+    # `intermedio-avanzado`, `intermedio/avanzado`, `intermedio alto`: describen
+    # un oral que un B2 escrito no garantiza, y los avisos los piden como
+    # indispensables. Sin esta forma solo se veia "ingles avanzado".
+    r"ingl[eé]s\s+(intermedio\s*[-/y]?\s*(a\s+)?)?"
+    r"(avanzado|fluido|fluidez|profesional|conversacional|nativo|alto|de negocios)\b|"
     r"(advanced|fluent|proficient|professional|business|native|strong|excellent)"
     + _HUECO + r"english|"
     r"english\s+(level\s+)?(c1|c2|advanced|fluent|fluency|proficiency|required|is required)|"
