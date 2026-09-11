@@ -133,7 +133,7 @@ function construir(perfil, v) {
   // Los proyectos publicos van antes que la experiencia: son lo unico que el
   // reclutador puede verificar por su cuenta antes de llamarte.
   if (v.proyectos?.length) {
-    hijos.push(P.seccion("Proyectos publicos"));
+    hijos.push(P.seccion("Proyectos públicos"));
     for (const pr of v.proyectos) {
       hijos.push(new Paragraph({
         spacing: { before: 140, after: 0 },
