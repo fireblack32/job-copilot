@@ -363,6 +363,8 @@ def _rankear(dedup, crudo, args, perfil, criterios):
     una regla y esperar veinte minutos para ver el efecto hace que las reglas
     se prueben poco, y las reglas que se prueban poco son las que fallan calladas.
     """
+    claves_ia = perfilado.claves_de_familias(perfil)
+
     # filtrar y puntuar
     #
     # Hay dos vias de aceptacion, con reglas distintas:
@@ -481,6 +483,8 @@ def _rankear(dedup, crudo, args, perfil, criterios):
                      "cop_max": round(cop_max) if cop_max else None,
                      "sobre_piso": round(techo / piso, 2) if techo else None,
                      "pts": pts, "hits": hits, "contras": contras, "anios_req": anios,
+                     # Marca, no filtro: ver perfilado.FAMILIAS_IA.
+                     "pide_ia": any(h in claves_ia for h in hits),
                      "latam": bool(any(re.search(p, campo_geo) for p in GEO_ACEPTA)),
                      "texto": texto[:4000]})
 
@@ -511,6 +515,7 @@ def _rankear(dedup, crudo, args, perfil, criterios):
           "| sur:", sum(1 for r in cali if r.get("zona") == "sur"),
           "| hibridas:", sum(1 for r in cali if r.get("modalidad") == "hibrido"))
     print("con salario > piso:", sum(1 for r in rank if r["sobre_piso"]))
+    print("piden IA          :", sum(1 for r in rank if r["pide_ia"]))
     print("=" * 74)
     por_fuente = {}
     for r in rank:

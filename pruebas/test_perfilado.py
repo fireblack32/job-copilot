@@ -181,3 +181,56 @@ def test_las_habilidades_de_telecom_pesan_como_las_de_desarrollo():
     pesos = P.pesos_de_habilidades(PERFIL_TRES_CARRERAS)
     assert pesos["dwdm"] == P.PESOS_POR_FAMILIA["telecomunicaciones"]
     assert pesos["dwdm"] > P.PESO_POR_DEFECTO
+
+
+PERFIL_CON_IA = {
+    "habilidades": {
+        "ia": ["OpenAI", "LLM", "Automatización de procesos con IA"],
+        "desarrollo_asistido_ia": ["Claude", "IA generativa"],
+        "automatizacion": ["Automatización de procesos"],
+        "industrial": ["PLC", "Automatización industrial"],
+    },
+}
+
+
+def test_la_automatizacion_no_pierde_peso_al_salir_de_ia():
+    """Siete vacantes de automatizacion salian del tablero si esta familia
+    caia al peso por defecto."""
+    pesos = P.pesos_de_habilidades(PERFIL_CON_IA)
+    assert pesos["automatizacion de procesos"] == P.PESOS_POR_FAMILIA["ia"]
+
+
+def test_la_automatizacion_de_procesos_no_marca_ia():
+    assert "automatizacion de procesos" not in P.claves_de_familias(PERFIL_CON_IA)
+
+
+def test_el_desarrollo_asistido_por_ia_pesa_como_la_ia():
+    """Sin su entrada en la tabla, la familia caia al peso por defecto y una
+    vacante que pedia Claude puntuaba como una que pedia Git."""
+    pesos = P.pesos_de_habilidades(PERFIL_CON_IA)
+    assert pesos["claude"] == P.PESOS_POR_FAMILIA["ia"]
+    assert pesos["ia generativa"] > P.PESO_POR_DEFECTO
+
+
+def test_las_claves_de_ia_salen_de_sus_dos_familias():
+    claves = P.claves_de_familias(PERFIL_CON_IA)
+    assert {"openai", "llm", "claude", "ia generativa"} <= claves
+
+
+def test_lo_industrial_no_cuenta_como_ia():
+    """"Automatizacion" a secas es de planta o de RPA; marcarla como IA
+    llenaria la marca de avisos que no piden nada de eso."""
+    claves = P.claves_de_familias(PERFIL_CON_IA)
+    assert "plc" not in claves
+    assert "automatizacion industrial" not in claves
+
+
+def test_las_claves_de_ia_casan_con_los_pesos():
+    """Se cruzan con los `hits` de cada vacante, que salen de los pesos: una
+    clave que no este en los pesos nunca podria marcar nada."""
+    pesos = P.pesos_de_habilidades(PERFIL_CON_IA)
+    assert P.claves_de_familias(PERFIL_CON_IA) <= set(pesos)
+
+
+def test_sin_habilidades_no_hay_claves_de_ia():
+    assert P.claves_de_familias({}) == set()

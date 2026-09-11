@@ -36,6 +36,16 @@ PESOS_POR_FAMILIA = {
     "frontend": 5,
     "backend": 5,
     "ia": 6,
+    # Trabajar CON agentes de IA, no solo integrar modelos: Claude, IA
+    # generativa, agentes. Pesa lo mismo que `ia` porque es la direccion en la
+    # que el perfil quiere crecer; sin esta entrada caia al peso por defecto (3)
+    # y una vacante que pedia Claude puntuaba como una que pedia Git.
+    "desarrollo_asistido_ia": 6,
+    # Automatizacion de procesos a secas: RPA, integraciones, batch, planta.
+    # Vivia dentro de `ia` y ahi pesaba 6; se saco para que no marque como IA
+    # avisos que no la piden, y conserva el mismo peso para no bajar del
+    # tablero siete vacantes de automatizacion que si encajan.
+    "automatizacion": 6,
     "bases_de_datos": 3,
     "cloud_devops": 4,
     # Dos nombres para la misma familia: el codigo decia `redes_telecom` y el
@@ -50,6 +60,11 @@ PESOS_POR_FAMILIA = {
     "herramientas": 2,
 }
 PESO_POR_DEFECTO = 3
+
+#: Familias cuyas habilidades marcan una vacante como "pide IA". Es una marca y
+#: no un filtro: filtrar por ella dejaria fuera los carriles de NOC e industrial
+#: enteros, que casi nunca la mencionan.
+FAMILIAS_IA = ("ia", "desarrollo_asistido_ia")
 
 #: Palabras demasiado genericas para puntuar: aparecen en casi cualquier aviso
 #: y solo suben el ruido. Se excluyen aunque esten en el perfil.
@@ -132,6 +147,27 @@ def pesos_de_habilidades(perfil: dict, extra: dict | None = None) -> dict:
     if extra:
         pesos.update({sin_tildes(k): v for k, v in extra.items()})
     return pesos
+
+
+def claves_de_familias(perfil: dict, familias=FAMILIAS_IA) -> set[str]:
+    """Claves de puntuacion de las habilidades de ciertas familias.
+
+    Mismas claves que produce `pesos_de_habilidades`, asi que se pueden cruzar
+    directo con los `hits` de una vacante para saber si pide algo de esa familia.
+    """
+    habilidades = perfil.get("habilidades") or {}
+    if not isinstance(habilidades, dict):
+        return set()
+    buscadas = {sin_tildes(f) for f in familias}
+    claves = set()
+    for familia, lista in habilidades.items():
+        if sin_tildes(familia) not in buscadas:
+            continue
+        for item in (lista or []):
+            clave = sin_tildes(str(item)).strip()
+            if clave and clave not in DEMASIADO_GENERICAS:
+                claves.add(clave)
+    return claves
 
 
 def terminos_de_busqueda(perfil: dict, maximo: int = 12) -> list[str]:
