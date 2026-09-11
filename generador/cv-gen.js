@@ -171,8 +171,15 @@ function construir(perfil, v) {
   hijos.push(P.seccion("Certificaciones"));
   for (const c of perfil.certificaciones) hijos.push(P.vineta(`${c.nombre} — ${c.entidad}, ${c.anio}.`));
 
+  // `en_cv` deja que el perfil diga el nivel con su matiz ("B2 certificado —
+  // lectura y escritura técnica") en vez del codigo a secas. Un "B2" pelado
+  // promete un ingles hablado que la entrevista despues no confirma.
   hijos.push(P.seccion("Idiomas"));
-  for (const i of perfil.idiomas) hijos.push(P.skill(i.idioma, i.nivel === "B1" ? "B1 — intermedio (lectura técnica de documentación)" : i.nivel));
+  for (const i of perfil.idiomas) {
+    const nivel = i.en_cv
+      || (i.nivel === "B1" ? "B1 — intermedio (lectura técnica de documentación)" : i.nivel);
+    hijos.push(P.skill(i.idioma, nivel));
+  }
 
   // "Referencias disponibles a solicitud" no aporta informacion: se asume, y
   // ocupa una linea que puede ser la que empuja el CV a una pagina de mas.
