@@ -113,7 +113,19 @@ function enlacesDeContacto(p, v) {
 function construir(perfil, v) {
   const p = perfil.personal;
   const expPorId = Object.fromEntries(perfil.experiencia.map((e) => [e.id, e]));
-  const orden = v.orden_experiencia || perfil.experiencia.map((e) => e.id);
+  // La experiencia va en orden cronologico inverso: es lo que esperan los
+  // filtros automaticos, y un salto de 2023 a 2025 se lee como un error de
+  // fechas. La variante decide QUE experiencias entran; el orden por
+  // relevancia solo se respeta si lo pide con `"orden": "relevancia"`.
+  const elegidas = v.orden_experiencia || perfil.experiencia.map((e) => e.id);
+  const clave = (id) => {
+    const e = expPorId[id];
+    if (!e) return "";
+    return `${e.actual ? "9999-99" : e.fin}|${e.inicio}`;
+  };
+  const orden = v.orden === "relevancia"
+    ? elegidas
+    : [...elegidas].sort((a, b) => clave(b).localeCompare(clave(a)));
 
   const hijos = [
     P.nombre(p.nombre_completo),
@@ -181,18 +193,33 @@ function construir(perfil, v) {
     hijos.push(P.skill(i.idioma, nivel));
   }
 
-  // "Referencias disponibles a solicitud" no aporta informacion: se asume, y
-  // ocupa una linea que puede ser la que empuja el CV a una pagina de mas.
-  // Solo se incluye si la variante lo pide expresamente.
-  if (v.incluir_referencias) {
+  // Las referencias salen del perfil, una por linea y con los datos en texto
+  // plano: un filtro automatico lee telefono y correo solo si no estan
+  // partidos en columnas o tablas. "Disponibles a solicitud" no se escribe
+  // nunca: no aporta informacion. La variante puede apagarlas con
+  // `"incluir_referencias": false`.
+  const refs = perfil.referencias || [];
+  if (refs.length && v.incluir_referencias !== false) {
     hijos.push(P.seccion("Referencias"));
-    hijos.push(P.parrafo("Referencias laborales y personales disponibles a solicitud."));
+    for (const r of refs) {
+      hijos.push(new Paragraph({
+        spacing: { after: 40, line: 264 },
+        children: [
+          new TextRun({ text: r.nombre, bold: true, size: 21, font: FONT }),
+          new TextRun({ text: ` — ${r.cargo}. Tel: ${r.telefono}. Correo: ${r.email}`, size: 21, font: FONT }),
+        ],
+      }));
+    }
   }
 
+  // Las propiedades del documento tambien se leen: algunos filtros toman el
+  // titulo del archivo antes que el cuerpo. Sin `keywords`: LibreOffice las
+  // parte por espacios al exportar a PDF y quedan palabras sueltas sin sentido.
   return new Document({
     creator: p.nombre_completo,
-    title: `CV - ${p.nombre_completo} - ${v.titular}`,
-    description: v.vacante ? `Adaptado para: ${v.vacante}` : "Hoja de vida optimizada para ATS",
+    title: `Hoja de vida - ${p.nombre_completo} - ${v.titular.replace(/\s+·\s+/g, ", ")}`,
+    subject: v.titular.replace(/\s+·\s+/g, ", "),
+    description: v.vacante ? `Adaptado para: ${v.vacante}` : "Hoja de vida",
     numbering: {
       config: [{
         reference: "vinetas",
