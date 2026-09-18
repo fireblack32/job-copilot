@@ -1,7 +1,7 @@
 /**
  * Generador de CV adaptado por vacante.
  *
- * Uso:  node cv-gen.js <variante.json> <salida.docx>
+ * Uso:  node cv-gen.js <variante.json> <salida.docx> [clasico|moderno]
  *
  * Lee el perfil maestro (perfil-maestro.json) y una "variante" que define
  * como adaptar ese perfil a una vacante concreta: titular, resumen, orden de
@@ -14,29 +14,76 @@ const fs = require("fs");
 const path = require("path");
 const {
   Document, Packer, Paragraph, TextRun, AlignmentType,
-  BorderStyle, LevelFormat, convertInchesToTwip, ExternalHyperlink,
+  BorderStyle, LevelFormat, convertInchesToTwip, ExternalHyperlink, ShadingType,
 } = require("docx");
 
 const FONT = "Calibri";
-const ACCENT = "1F3864";
+
+// "moderno" pone el encabezado en una banda de color y da color a secciones y
+// empresas. Sigue siendo una sola columna de texto real, sin tablas ni
+// imagenes: el diseño cambia la vista, no lo que lee un filtro automatico.
+const ESTILO = process.argv[4] || process.env.CV_ESTILO || "clasico";
+const MODERNO = ESTILO === "moderno";
+const ACCENT = MODERNO ? "1F5F99" : "1F3864";
+const BANDA = "14365D";
+const SOBRE_BANDA = "FFFFFF";
+const TENUE_BANDA = "BCD4EA";
+const banda = MODERNO ? { type: ShadingType.CLEAR, color: "auto", fill: BANDA } : undefined;
+// Mismo borde, del color de la banda, en los cuatro parrafos del encabezado:
+// Word y LibreOffice los agrupan en una sola caja, y el "space" del borde hace
+// de margen interno para que el texto no toque el canto del color.
+const lado = { style: BorderStyle.SINGLE, size: 6, space: 10, color: BANDA };
+const cajaBanda = MODERNO ? { top: lado, bottom: lado, left: lado, right: lado } : undefined;
+const TXT_ENCABEZADO = MODERNO ? SOBRE_BANDA : undefined;
+const SEP_COLOR = MODERNO ? TENUE_BANDA : "595959";
+const ENLACE_COLOR = MODERNO ? SOBRE_BANDA : "0563C1";
 
 // ---------------------------------------------------------------- primitivas
 const P = {
   nombre: (t) => new Paragraph({
-    alignment: AlignmentType.CENTER, spacing: { after: 40 },
-    children: [new TextRun({ text: t, bold: true, size: 40, font: FONT })],
+    alignment: MODERNO ? AlignmentType.LEFT : AlignmentType.CENTER,
+    spacing: MODERNO ? { before: 0, after: 0 } : { after: 40 },
+    shading: banda,
+    border: cajaBanda,
+    children: [new TextRun({
+      text: t, bold: true, size: MODERNO ? 46 : 40, font: FONT,
+      color: TXT_ENCABEZADO, characterSpacing: MODERNO ? 10 : undefined,
+    })],
+  }),
+  // En "moderno" nombre y titular van en un solo parrafo: LibreOffice pinta un
+  // filo blanco entre dos parrafos sombreados cuando cambian de tamaño de letra.
+  nombreYTitular: (n, t) => new Paragraph({
+    alignment: AlignmentType.LEFT, spacing: { before: 0, after: 0 },
+    shading: banda, border: cajaBanda,
+    children: [
+      new TextRun({ text: n, bold: true, size: 46, font: FONT, color: SOBRE_BANDA, characterSpacing: 10 }),
+      new TextRun({ text: t, size: 23, font: FONT, color: TENUE_BANDA, bold: true, break: 1 }),
+    ],
   }),
   titular: (t) => new Paragraph({
-    alignment: AlignmentType.CENTER, spacing: { after: 60 },
-    children: [new TextRun({ text: t, size: 22, font: FONT, color: ACCENT, bold: true })],
+    alignment: MODERNO ? AlignmentType.LEFT : AlignmentType.CENTER,
+    spacing: MODERNO ? { after: 0 } : { after: 60 },
+    shading: banda,
+    border: cajaBanda,
+    children: [new TextRun({ text: t, size: 23, font: FONT, color: MODERNO ? TENUE_BANDA : ACCENT, bold: true })],
   }),
-  centro: (children) => new Paragraph({
-    alignment: AlignmentType.CENTER, spacing: { after: 120 }, children,
+  centro: (children, ultima = false) => new Paragraph({
+    alignment: MODERNO ? AlignmentType.LEFT : AlignmentType.CENTER,
+    spacing: MODERNO ? { before: ultima ? 0 : 80, after: ultima ? 60 : 0 } : { after: 120 },
+    shading: banda,
+    border: cajaBanda,
+    children,
   }),
   seccion: (t) => new Paragraph({
-    spacing: { before: 240, after: 100 },
-    border: { bottom: { style: BorderStyle.SINGLE, size: 8, space: 2, color: ACCENT } },
-    children: [new TextRun({ text: t.toUpperCase(), bold: true, size: 24, font: FONT, color: ACCENT })],
+    spacing: { before: 260, after: 110 },
+    border: MODERNO
+      ? { left: { style: BorderStyle.SINGLE, size: 36, space: 6, color: ACCENT },
+          bottom: { style: BorderStyle.SINGLE, size: 4, space: 2, color: "C9D6E3" } }
+      : { bottom: { style: BorderStyle.SINGLE, size: 8, space: 2, color: ACCENT } },
+    children: [new TextRun({
+      text: t.toUpperCase(), bold: true, size: 24, font: FONT, color: ACCENT,
+      characterSpacing: MODERNO ? 20 : undefined,
+    })],
   }),
   parrafo: (t) => new Paragraph({
     alignment: AlignmentType.JUSTIFIED, spacing: { after: 100, line: 264 },
@@ -46,7 +93,7 @@ const P = {
     spacing: { before: 160, after: 0 },
     children: [
       new TextRun({ text: cargo, bold: true, size: 22, font: FONT }),
-      new TextRun({ text: " | " + empresa, size: 22, font: FONT }),
+      new TextRun({ text: " | " + empresa, size: 22, font: FONT, color: MODERNO ? ACCENT : undefined, bold: MODERNO }),
     ],
   }),
   meta: (t) => new Paragraph({
@@ -60,7 +107,7 @@ const P = {
   skill: (cat, items) => new Paragraph({
     spacing: { after: 60, line: 264 },
     children: [
-      new TextRun({ text: cat + ": ", bold: true, size: 21, font: FONT }),
+      new TextRun({ text: cat + ": ", bold: true, size: 21, font: FONT, color: MODERNO ? ACCENT : undefined }),
       new TextRun({ text: items, size: 21, font: FONT }),
     ],
   }),
@@ -81,11 +128,11 @@ function periodo(exp) {
 /** Quita el esquema y la barra final para que el enlace se lea corto. */
 const acortar = (url) => url.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
 
-const separador = () => new TextRun({ text: "  |  ", size: 20, font: FONT, color: "595959" });
+const separador = () => new TextRun({ text: "  |  ", size: 20, font: FONT, color: SEP_COLOR });
 
 const enlace = (url) => new ExternalHyperlink({
   link: url,
-  children: [new TextRun({ text: acortar(url), size: 20, font: FONT, color: "0563C1", underline: {} })],
+  children: [new TextRun({ text: acortar(url), size: 20, font: FONT, color: ENLACE_COLOR, underline: MODERNO ? undefined : {} })],
 });
 
 /**
@@ -104,7 +151,7 @@ function enlacesDeContacto(p, v) {
   if (partes.length) partes.push(separador());
   partes.push(new TextRun({
     text: v.disponibilidad || "Disponibilidad: trabajo 100% remoto",
-    size: 20, font: FONT,
+    size: 20, font: FONT, color: TXT_ENCABEZADO,
   }));
   return partes;
 }
@@ -128,16 +175,17 @@ function construir(perfil, v) {
     : [...elegidas].sort((a, b) => clave(b).localeCompare(clave(a)));
 
   const hijos = [
-    P.nombre(p.nombre_completo),
-    P.titular(v.titular),
+    ...(MODERNO
+      ? [P.nombreYTitular(p.nombre_completo, v.titular)]
+      : [P.nombre(p.nombre_completo), P.titular(v.titular)]),
     P.centro([
-      new TextRun({ text: `${p.ciudad}, ${p.departamento}, ${p.pais}`, size: 20, font: FONT }),
-      new TextRun({ text: "  |  ", size: 20, font: FONT, color: "595959" }),
-      new TextRun({ text: p.telefono, size: 20, font: FONT }),
-      new TextRun({ text: "  |  ", size: 20, font: FONT, color: "595959" }),
-      new TextRun({ text: p.email, size: 20, font: FONT }),
+      new TextRun({ text: `${p.ciudad}, ${p.departamento}, ${p.pais}`, size: 20, font: FONT, color: TXT_ENCABEZADO }),
+      separador(),
+      new TextRun({ text: p.telefono, size: 20, font: FONT, color: TXT_ENCABEZADO }),
+      separador(),
+      new TextRun({ text: p.email, size: 20, font: FONT, color: TXT_ENCABEZADO }),
     ]),
-    P.centro(enlacesDeContacto(p, v)),
+    P.centro(enlacesDeContacto(p, v), true),
     P.seccion("Perfil profesional"),
     ...v.perfil.map(P.parrafo),
   ];
